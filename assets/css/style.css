@@ -1,0 +1,427 @@
+/**
+ * OS Master - Estilos Globais e Layout Base
+ * * Este ficheiro centraliza toda a identidade visual, tipografia,
+ * componentes de interface e regras de responsividade do sistema.
+ * * @package OSMaster
+ * @author Julian C. Braga
+ * @version 1.0
+ */
+
+/* ==========================================================================
+   1. Variáveis e Tokens de Design (Tema Escuro e Claro Sofisticado)
+   ========================================================================== */
+:root {
+    /* Paleta de Cores Base (Fundo e Superfícies) */
+    --bg-main: #0f172a;          /* Slate 900 */
+    --bg-card: #1e293b;          /* Slate 800 */
+    --bg-hover: #334155;         /* Slate 700 */
+    --border-color: #334155;     /* Slate 700 */
+    
+    /* Cores de Destaque e Ação */
+    --primary: #3b82f6;          /* Azul Blue 500 */
+    --primary-hover: #2563eb;    /* Azul Blue 600 */
+    --accent: #6366f1;           /* Indigo 500 */
+    
+    /* Cores de Feedback Semântico */
+    --success: #10b981;          /* Verde Emerald 500 */
+    --success-bg: rgba(16, 185, 129, 0.1);
+    --warning: #f59e0b;          /* Amarelo Amber 500 */
+    --warning-bg: rgba(245, 158, 11, 0.1);
+    --danger: #ef4444;           /* Vermelho Red 500 */
+    --danger-bg: rgba(239, 68, 68, 0.1);
+    --info: #06b6d4;             /* Ciano 500 */
+    --info-bg: rgba(6, 182, 212, 0.1);
+
+    /* Textos */
+    --text-main: #f8fafc;        /* Slate 50 */
+    --text-muted: #94a3b8;       /* Slate 400 */
+    --text-dark: #0f172a;        /* Texto para botões claros */
+
+    /* Tipografia e Espaçamentos */
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --transition-fast: 0.15s ease;
+    --transition-normal: 0.25s ease;
+}
+
+/* ==========================================================================
+   2. Reset e Regras Globais de Acessibilidade
+   ========================================================================== */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    line-height: 1.5;
+    overflow-x: hidden;
+    min-height: 100vh;
+}
+
+img, svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+button, input, select, textarea {
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    background: transparent;
+    border: none;
+    outline: none;
+}
+
+a {
+    color: var(--primary);
+    text-decoration: none;
+    transition: color var(--transition-fast);
+}
+
+a:hover {
+    color: var(--primary-hover);
+}
+
+/* Scrollbar Personalizada */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: var(--bg-main);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: var(--radius-sm);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
+/* ==========================================================================
+   3. Estrutura de Layout Base (Sidebar + Header + Main Area)
+   ========================================================================== */
+.layout-wrapper {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    min-height: 100vh;
+}
+
+/* Barra Lateral (Sidebar Navigation) */
+.sidebar {
+    background-color: var(--bg-card);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+}
+
+.sidebar-brand {
+    padding: 24px;
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--text-main);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.sidebar-menu {
+    list-style: none;
+    padding: 20px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-grow: 1;
+    overflow-y: auto;
+}
+
+.sidebar-item a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-weight: 500;
+    transition: all var(--transition-normal);
+}
+
+.sidebar-item.active a,
+.sidebar-item a:hover {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+}
+
+.sidebar-item.active a {
+    border-left: 4px solid var(--primary);
+}
+
+.sidebar-footer {
+    padding: 20px;
+    border-top: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+/* Painel de Conteúdo (Main Content Area) */
+.main-content {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow-y: auto;
+}
+
+/* Cabeçalho do Painel (Top Header Bar) */
+.top-header {
+    background-color: var(--bg-card);
+    height: 70px;
+    min-height: 70px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 32px;
+    border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.page-title {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.user-nav {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+}
+
+.user-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: var(--primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+}
+
+/* Área Interna de Páginas */
+.page-container {
+    padding: 32px;
+    flex-grow: 1;
+}
+
+/* ==========================================================================
+   4. Componentes Reutilizáveis de UI (Design System)
+   ========================================================================== */
+
+/* Cartões (Cards) */
+.card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.card-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--text-main);
+}
+
+/* Botões Modernos */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-primary {
+    background-color: var(--primary);
+    color: white;
+}
+.btn-primary:hover {
+    background-color: var(--primary-hover);
+    color: white;
+}
+
+.btn-secondary {
+    background-color: var(--bg-hover);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+}
+.btn-secondary:hover {
+    background-color: var(--border-color);
+}
+
+.btn-danger {
+    background-color: var(--danger);
+    color: white;
+}
+.btn-danger:hover {
+    background-color: #dc2626;
+}
+
+/* Formulários Elegantes */
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-label {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.form-control {
+    width: 100%;
+    background-color: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    color: var(--text-main);
+    font-size: 14px;
+    transition: border-color var(--transition-fast);
+}
+
+.form-control:focus {
+    border-color: var(--primary);
+}
+
+select.form-control {
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    background-size: 16px;
+    padding-right: 40px;
+}
+
+/* Tabelas de Dados (Data Tables) */
+.table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    background-color: var(--bg-card);
+}
+
+.table th {
+    background-color: #1e293b;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.table td {
+    padding: 16px 20px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-main);
+}
+
+.table tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Distintivos (Badges) para Status de Ordens de Serviço */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 50px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+}
+
+.badge-aberta {
+    background-color: var(--info-bg);
+    color: var(--info);
+}
+
+.badge-em-andamento {
+    background-color: var(--warning-bg);
+    color: var(--warning);
+}
+
+.badge-finalizada {
+    background-color: var(--success-bg);
+    color: var(--success);
+}
+
+.badge-cancelada {
+    background-color: var(--danger-bg);
+    color: var(--danger);
+}
+
+/* ==========================================================================
+   5. Regras de Responsividade (Media Queries)
+   ========================================================================== */
+@media (max-width: 992px) {
+    .layout-wrapper {
+        grid-template-columns: 1fr;
+    }
+    
+    .sidebar {
+        display: none; /* Em telas móveis, a barra lateral será acionada dinamicamente */
+    }
+    
+    .top-header {
+        padding: 0 16px;
+    }
+    
+    .page-container {
+        padding: 16px;
+    }
+}

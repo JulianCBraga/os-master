@@ -1,0 +1,19 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local environment and database credentials
+config/database.php
+.env
+
+# Runtime uploads and generated archives
+uploads/*
+!uploads/.gitkeep
+*.zip
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
