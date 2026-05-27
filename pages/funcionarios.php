@@ -105,8 +105,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'valor_comissao_mo' => parseBrazilianDecimal($_POST['valor_comissao_mo'] ?? '0,00')
     ];
 
+    $postedEditData = array_merge($editData, $pessoaFields, [
+        'cargo'             => $funcionarioFields['cargo'],
+        'salario'           => trim($_POST['salario'] ?? '0,00'),
+        'comissao_os'       => $funcionarioFields['comissao_os'],
+        'valor_comissao_os' => trim($_POST['valor_comissao_os'] ?? '0,00'),
+        'comissao_mo'       => $funcionarioFields['comissao_mo'],
+        'valor_comissao_mo' => trim($_POST['valor_comissao_mo'] ?? '0,00'),
+    ]);
+
     // 1. AÇÃO: CRIAR NOVO FUNCIONÁRIO
     if ($formAction === 'create') {
+        $action = 'create';
+        $editData = $postedEditData;
+
         if (empty($pessoaFields['nome']) || !$pessoaFields['id_cidade'] || empty($funcionarioFields['cargo'])) {
             $message = 'Nome, Cidade e Cargo são campos de preenchimento obrigatório.';
             $messageType = 'danger';
@@ -141,6 +153,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = 'Funcionário registado com sucesso!';
                 $messageType = 'success';
                 $action = 'list';
+                $editData = [
+                    'nome' => '', 'tipo_pessoa' => 'FISICA', 'cpf_cnpj' => '', 'rg_ie' => '',
+                    'telefone' => '', 'cep' => '', 'endereco' => '', 'numero' => '',
+                    'bairro' => '', 'id_cidade' => '', 'status' => 1,
+                    'cargo' => 'Atendente', 'salario' => '0,00',
+                    'comissao_os' => 0, 'valor_comissao_os' => '0,00',
+                    'comissao_mo' => 0, 'valor_comissao_mo' => '0,00'
+                ];
             } catch (Exception $e) {
                 if ($pdo->inTransaction()) {
                     $pdo->rollBack();
@@ -153,6 +173,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // 2. AÇÃO: ATUALIZAR FUNCIONÁRIO EXISTENTE
     if ($formAction === 'update' && $editId) {
+        $action = 'edit';
+        $editData = $postedEditData;
+
         if (empty($pessoaFields['nome']) || !$pessoaFields['id_cidade'] || empty($funcionarioFields['cargo'])) {
             $message = 'Nome, Cidade e Cargo são campos de preenchimento obrigatório.';
             $messageType = 'danger';
@@ -202,7 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ==========================================================================
 // Processamento de Ações de URL (GET)
 // ==========================================================================
-if ($action === 'edit' && $editId) {
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $action === 'edit' && $editId) {
     try {
         $sqlEdit = "SELECT p.*, f.cargo, f.salario, f.comissao_os, f.valor_comissao_os, f.comissao_mo, f.valor_comissao_mo 
                     FROM pessoa p 
@@ -590,11 +613,29 @@ try {
                         form.addEventListener('submit', function(e) {
                             if (cpfInput && cpfInput.value !== '') {
                                 const cleanCPF = cpfInput.value.replace(/\D/g, '');
-                                
-                                // Algoritmo matemático padrão de CPF
-                                if (cleanCPF.length !== 11 || /^(\d)\1{10}$/.test(cleanCPF)) {
+
+                                function cpfValido(cpf) {
+                                    if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) {
+                                        return false;
+                                    }
+
+                                    for (let t = 9; t < 11; t++) {
+                                        let d = 0;
+                                        for (let c = 0; c < t; c++) {
+                                            d += Number(cpf[c]) * ((t + 1) - c);
+                                        }
+                                        d = ((10 * d) % 11) % 10;
+                                        if (Number(cpf[t]) !== d) {
+                                            return false;
+                                        }
+                                    }
+
+                                    return true;
+                                }
+
+                                if (!cpfValido(cleanCPF)) {
                                     e.preventDefault();
-                                    mostrarMensagemErro('O CPF informado é matematicamente inválido.');
+                                    mostrarMensagemErro('O CPF informado é inválido. Corrija o número antes de gravar.');
                                     cpfInput.focus();
                                     return false;
                                 }
