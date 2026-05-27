@@ -82,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               `id_pessoa` int(11) NOT NULL AUTO_INCREMENT,
               `tipo_pessoa` enum('FISICA','JURIDICA') NOT NULL,
               `nome` varchar(100) NOT NULL,
-              `cpf_cnpj` varchar(20) NOT NULL,
+              `cpf_cnpj` varchar(20) DEFAULT NULL,
               `rg_ie` varchar(20) DEFAULT NULL,
               `telefone` varchar(20) DEFAULT NULL,
               `cep` varchar(10) DEFAULT NULL,
@@ -116,6 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               `endereco_completo` varchar(255) DEFAULT NULL,
               `logo_caminho` varchar(255) DEFAULT NULL,
               `termo_compromisso_texto` text DEFAULT NULL,
+              `moeda` varchar(10) DEFAULT 'R$',
               `prazo_maximo_retirada` int(11) DEFAULT 90,
               PRIMARY KEY (`id_config`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
@@ -171,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               `valor_pecas` decimal(10,2) DEFAULT 0.00,
               `valor_mao_obra` decimal(10,2) DEFAULT 0.00,
               `valor_total` decimal(10,2) DEFAULT 0.00,
-              `status` enum('aberta','em_andamento','finalizada','cancelada') NOT NULL,
+              `status` varchar(50) NOT NULL,
               `termo_compromisso_gerado` tinyint(1) DEFAULT 0,
               `created_at` datetime DEFAULT current_timestamp(),
               `updated_at` datetime DEFAULT NULL ON UPDATE current_timestamp(),
@@ -251,12 +252,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $pdoInit->exec("SET FOREIGN_KEY_CHECKS = 1;");
 
         // 4. Inserção automática de Dados Básicos (Estados, Cidades, Pessoa, Funcionário e Utilizador Admin)
-        // 4.1. Estado Padrão (Mato Grosso do Sul)
-        $stmtEstado = $pdoInit->prepare("INSERT INTO `estado` (`id_estado`, `nome`, `sigla`) VALUES (1, 'Mato Grosso do Sul', 'MS') ON DUPLICATE KEY UPDATE `id_estado`=1;");
-        $stmtEstado->execute();
+        // 4.1. Estados brasileiros
+        $estadosBrasileiros = [
+            [1, 'Acre', 'AC'],
+            [2, 'Alagoas', 'AL'],
+            [3, 'Amapá', 'AP'],
+            [4, 'Amazonas', 'AM'],
+            [5, 'Bahia', 'BA'],
+            [6, 'Ceará', 'CE'],
+            [7, 'Distrito Federal', 'DF'],
+            [8, 'Espírito Santo', 'ES'],
+            [9, 'Goiás', 'GO'],
+            [10, 'Maranhão', 'MA'],
+            [11, 'Mato Grosso', 'MT'],
+            [12, 'Mato Grosso do Sul', 'MS'],
+            [13, 'Minas Gerais', 'MG'],
+            [14, 'Pará', 'PA'],
+            [15, 'Paraíba', 'PB'],
+            [16, 'Paraná', 'PR'],
+            [17, 'Pernambuco', 'PE'],
+            [18, 'Piauí', 'PI'],
+            [19, 'Rio de Janeiro', 'RJ'],
+            [20, 'Rio Grande do Norte', 'RN'],
+            [21, 'Rio Grande do Sul', 'RS'],
+            [22, 'Rondônia', 'RO'],
+            [23, 'Roraima', 'RR'],
+            [24, 'Santa Catarina', 'SC'],
+            [25, 'São Paulo', 'SP'],
+            [26, 'Sergipe', 'SE'],
+            [27, 'Tocantins', 'TO'],
+        ];
 
-        // 4.2. Cidade Padrão (Dourados)
-        $stmtCidade = $pdoInit->prepare("INSERT INTO `cidade` (`id_cidade`, `nome`, `id_estado`) VALUES (1, 'Dourados', 1) ON DUPLICATE KEY UPDATE `id_cidade`=1;");
+        $stmtEstado = $pdoInit->prepare("
+            INSERT INTO `estado` (`id_estado`, `nome`, `sigla`)
+            VALUES (:id_estado, :nome, :sigla)
+            ON DUPLICATE KEY UPDATE `nome` = VALUES(`nome`), `sigla` = VALUES(`sigla`);
+        ");
+
+        foreach ($estadosBrasileiros as [$idEstado, $nomeEstado, $siglaEstado]) {
+            $stmtEstado->execute([
+                ':id_estado' => $idEstado,
+                ':nome' => $nomeEstado,
+                ':sigla' => $siglaEstado,
+            ]);
+        }
+
+        // 4.2. Cidade Padrão (Dourados/MS)
+        $stmtCidade = $pdoInit->prepare("INSERT INTO `cidade` (`id_cidade`, `nome`, `id_estado`) VALUES (1, 'Dourados', 12) ON DUPLICATE KEY UPDATE `nome` = VALUES(`nome`), `id_estado` = VALUES(`id_estado`);");
         $stmtCidade->execute();
 
         // 4.3. Pessoa Padrão para o Administrador
@@ -283,8 +325,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // 4.6. Configuração do Sistema Inicial
         $stmtConfig = $pdoInit->prepare("INSERT INTO `config_sistema` 
-            (`id_config`, `nome_fantasia`, `razao_social`, `cnpj`, `telefone`, `email`, `endereco_completo`, `termo_compromisso_texto`, `prazo_maximo_retirada`) 
-            VALUES (1, 'OS Master Assistência', 'OS Master Soluções em Tecnologia LTDA', '00.000.000/0001-00', '(67) 3411-0000', 'contacto@osmaster.com', 'Av. Presidente Vargas, 1200 - Dourados/MS', 'Autorizo a realização de testes e diagnósticos necessários no meu equipamento. O prazo limite para levantamento do aparelho após notificação do término do serviço é de 90 dias, findo o qual o aparelho será considerado abandonado nos termos da legislação civil vigente.', 90)
+            (`id_config`, `nome_fantasia`, `razao_social`, `cnpj`, `telefone`, `email`, `endereco_completo`, `termo_compromisso_texto`, `moeda`, `prazo_maximo_retirada`)
+            VALUES (1, 'OS Master Assistência', 'OS Master Soluções em Tecnologia LTDA', '00.000.000/0001-00', '(67) 3411-0000', 'contacto@osmaster.com', 'Av. Presidente Vargas, 1200 - Dourados/MS', 'Autorizo a realização de testes e diagnósticos necessários no meu equipamento. O prazo limite para levantamento do aparelho após notificação do término do serviço é de 90 dias, findo o qual o aparelho será considerado abandonado nos termos da legislação civil vigente.', 'R$', 90)
             ON DUPLICATE KEY UPDATE `id_config`=1;");
         $stmtConfig->execute();
 

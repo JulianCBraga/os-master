@@ -24,13 +24,6 @@ if (!isset($_SESSION['user_id'])) {
 // Carrega a classe de controlo base Pessoa
 require_once BASE_PATH . '/classes/Pessoa.php';
 
-// Auto-healing: Altera a coluna da base de dados em tempo de execução para suportar CPF nulo/opcional
-try {
-    $pdo->exec("ALTER TABLE `pessoa` MODIFY `cpf_cnpj` varchar(20) NULL;");
-} catch (PDOException $e) {
-    // Silencioso caso já esteja alterado ou falte privilégios de administrador de DDL
-}
-
 /**
  * Converte valor em formato de moeda brasileira (ex: 1.500,00) para float puro (ex: 1500.00)
  */

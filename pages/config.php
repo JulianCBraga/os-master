@@ -31,16 +31,6 @@ if ($_SESSION['user_role'] !== 'Administrador') {
     exit;
 }
 
-// Auto-healing: Adiciona de forma segura a coluna 'moeda' à tabela config_sistema se não existir
-try {
-    $checkMoeda = $pdo->query("SHOW COLUMNS FROM `config_sistema` LIKE 'moeda'")->fetch();
-    if (!$checkMoeda) {
-        $pdo->exec("ALTER TABLE `config_sistema` ADD `moeda` varchar(10) DEFAULT 'R$';");
-    }
-} catch (PDOException $e) {
-    // Ignora silenciosamente se já existir ou se houver impedimento de privilégios
-}
-
 $message = '';
 $messageType = '';
 

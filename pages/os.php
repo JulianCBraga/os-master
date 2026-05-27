@@ -137,13 +137,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['ajax_action'])) {
     }
 }
 
-// Auto-healing: Altera a coluna 'status' de ENUM estrito para VARCHAR extensível para suportar os novos estados
-try {
-    $pdo->exec("ALTER TABLE `os` MODIFY `status` varchar(50) NOT NULL;");
-} catch (PDOException $e) {
-    // Silencioso se já estiver alterado ou se não houver privilégios
-}
-
 // Auxiliares locais de moeda para evitar conflito de redeclarações
 if (!function_exists('parseDecimalOS')) {
     function parseDecimalOS($value): float {
