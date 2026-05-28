@@ -328,7 +328,7 @@ try {
                     const lblRgIe = document.getElementById('lbl_rg_ie');
 
                     // 1. GESTÃO DINÂMICA DE TIPO DE CLIENTE (Física vs Jurídica)
-                    function ajustarCamposTipoPessoa() {
+                    function ajustarCamposTipoPessoa(limparDocumento = false) {
                         const selectedType = document.querySelector('input[name="tipo_pessoa"]:checked').value;
                         if (selectedType === 'FISICA') {
                             lblNome.textContent = 'Nome Completo';
@@ -341,14 +341,19 @@ try {
                             cpfCnpjInput.placeholder = '00.000.000/0001-00';
                             lblRgIe.textContent = 'Inscrição Estadual (IE)';
                         }
-                        // Limpa e foca no campo ao trocar
-                        cpfCnpjInput.value = '';
+
+                        if (limparDocumento) {
+                            cpfCnpjInput.value = '';
+                            cpfCnpjInput.focus();
+                        }
                     }
 
                     document.querySelectorAll('input[name="tipo_pessoa"]').forEach(radio => {
-                        radio.addEventListener('change', ajustarCamposTipoPessoa);
+                        radio.addEventListener('change', function() {
+                            ajustarCamposTipoPessoa(true);
+                        });
                     });
-                    ajustarCamposTipoPessoa(); // Executa ao carregar para definir estado inicial
+                    ajustarCamposTipoPessoa(); // Executa ao carregar sem apagar documento salvo
 
                     // 2. IMPEDIR SUBMISSÃO DE FORMULÁRIO AO TECLAR ENTER NOS INPUTS
                     if (form) {
