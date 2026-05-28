@@ -99,10 +99,11 @@ if (!function_exists('getStatusTextLocal')) {
             case 'aguardando_peca': return 'Aguardando Peça';
             case 'em_reparo': return 'Em Reparo';
             case 'reparo_concluido': return 'Reparo Concluído';
-            case 'sem_conserto': return 'Sem Conserto';
+            case 'sem_conserto': return 'Sem conserto retirar';
             case 'pronto_para_retirada': return 'Pronto para Retirada';
             case 'entregue': return 'Entregue';
             case 'abandonado': return 'Abandonado';
+            case 'descarte': return 'Descarte';
             default: return ucfirst(str_replace('_', ' ', $status));
         }
     }

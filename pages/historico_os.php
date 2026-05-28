@@ -44,13 +44,15 @@ if (!function_exists('getStatusBadgeTimeline')) {
             case 'reparo_concluido':
                 return '<span class="badge" style="background-color: rgba(16, 185, 129, 0.1); color: #10b981;">Reparo Concluído</span>';
             case 'sem_conserto':
-                return '<span class="badge" style="background-color: rgba(239, 68, 68, 0.1); color: #ef4444;">Sem Conserto</span>';
+                return '<span class="badge" style="background-color: rgba(239, 68, 68, 0.1); color: #ef4444;">Sem conserto retirar</span>';
             case 'pronto_para_retirada':
                 return '<span class="badge" style="background-color: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: bold;">Pronto para Retirada</span>';
             case 'entregue':
                 return '<span class="badge" style="background-color: rgba(16, 185, 129, 0.2); color: #10b981; font-weight: bold;">Entregue</span>';
             case 'abandonado':
                 return '<span class="badge" style="background-color: rgba(239, 68, 68, 0.2); color: #ef4444; font-weight: bold;">Abandonado</span>';
+            case 'descarte':
+                return '<span class="badge" style="background-color: rgba(239, 68, 68, 0.2); color: #ef4444; font-weight: bold;">Descarte</span>';
             default:
                 return '<span class="badge" style="background-color: rgba(148, 163, 184, 0.1); color: #94a3b8;">' . htmlspecialchars(ucfirst($status)) . '</span>';
         }

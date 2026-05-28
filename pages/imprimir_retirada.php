@@ -75,16 +75,17 @@ try {
 
 // Arrays de mapeamento para o Status visual
 $statusOficiais = [
-    'Aguardando analise' => 'Aguardando Análise',
-    'Em diagnostico' => 'Em Diagnóstico',
-    'Aguardando aprovacao' => 'Aguardando Aprovação',
-    'Em reparo' => 'Em Reparo',
-    'Aguardando pecas' => 'Aguardando Peças',
-    'Pronto para retirada' => 'Pronto para Retirada',
-    'Sem conserto retirar' => 'Sem Conserto',
-    'Entregue' => 'Entregue (Finalizada)',
-    'Abandonado' => 'Abandonado',
-    'Descarte' => 'Descarte'
+    'aguardando_analise' => 'Aguardando Análise',
+    'em_diagnostico' => 'Em Diagnóstico',
+    'aguardando_aprovacao' => 'Aguardando Aprovação',
+    'aguardando_peca' => 'Aguardando Peça',
+    'em_reparo' => 'Em Reparo',
+    'reparo_concluido' => 'Reparo concluído',
+    'pronto_para_retirada' => 'Pronto para Retirada',
+    'sem_conserto' => 'Sem conserto retirar',
+    'entregue' => 'Entregue (Finalizada)',
+    'abandonado' => 'Abandonado',
+    'descarte' => 'Descarte'
 ];
 ?>
 

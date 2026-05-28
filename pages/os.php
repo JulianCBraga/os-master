@@ -153,43 +153,82 @@ if (!function_exists('formatDecimalOS')) {
     }
 }
 
+if (!function_exists('getOSStatusOptions')) {
+    function getOSStatusOptions(): array {
+        return [
+            'aguardando_analise' => 'Aguardando Análise',
+            'em_diagnostico' => 'Em Diagnóstico',
+            'aguardando_aprovacao' => 'Aguardando Aprovação',
+            'aguardando_peca' => 'Aguardando Peça',
+            'em_reparo' => 'Em Reparo',
+            'pronto_para_retirada' => 'Pronto para Retirada',
+            'sem_conserto' => 'Sem conserto retirar',
+            'abandonado' => 'Abandonado',
+            'descarte' => 'Descarte',
+            'entregue' => 'Entregue',
+        ];
+    }
+}
+
+if (!function_exists('getOSStatusLabel')) {
+    function getOSStatusLabel(string $status): string {
+        $labels = getOSStatusOptions();
+        $legacyLabels = [
+            'reparo_concluido' => 'Reparo concluído',
+        ];
+
+        return $labels[$status] ?? $legacyLabels[$status] ?? ucfirst(str_replace('_', ' ', $status));
+    }
+}
+
+if (!function_exists('isStockImpactStatus')) {
+    function isStockImpactStatus(string $status): bool {
+        return in_array($status, ['em_reparo', 'reparo_concluido', 'pronto_para_retirada', 'entregue', 'abandonado', 'descarte'], true);
+    }
+}
+
+if (!function_exists('isWithdrawalStatus')) {
+    function isWithdrawalStatus(string $status): bool {
+        return in_array($status, ['reparo_concluido', 'pronto_para_retirada', 'sem_conserto', 'abandonado', 'descarte', 'entregue'], true);
+    }
+}
+
 // Retorna o elemento HTML do badge estilizado de acordo com o novo fluxo de progresso
 if (!function_exists('getStatusBadge')) {
     function getStatusBadge($status): string {
         switch ($status) {
             case 'aguardando_analise':
-                return '<span class="badge badge-aberta">Aguardando Análise</span>';
             case 'em_diagnostico':
-                return '<span class="badge badge-aberta">Em Diagnóstico</span>';
+                return '<span class="badge badge-aberta">' . htmlspecialchars(getOSStatusLabel($status)) . '</span>';
             case 'aguardando_aprovacao':
-                return '<span class="badge badge-em-andamento">Aguardando Aprovação</span>';
             case 'aguardando_peca':
-                return '<span class="badge badge-em-andamento">Aguardando Peça</span>';
             case 'em_reparo':
-                return '<span class="badge badge-em-andamento">Em Reparo</span>';
+                return '<span class="badge badge-em-andamento">' . htmlspecialchars(getOSStatusLabel($status)) . '</span>';
             case 'reparo_concluido':
-                return '<span class="badge badge-finalizada">Reparo Concluído</span>';
-            case 'sem_conserto':
-                return '<span class="badge badge-cancelada">Sem Conserto</span>';
             case 'pronto_para_retirada':
-                return '<span class="badge badge-finalizada">Pronto para Retirada</span>';
             case 'entregue':
-                return '<span class="badge badge-finalizada">Entregue</span>';
+                return '<span class="badge badge-finalizada">' . htmlspecialchars(getOSStatusLabel($status)) . '</span>';
+            case 'sem_conserto':
             case 'abandonado':
-                return '<span class="badge badge-cancelada">Abandonado</span>';
+            case 'descarte':
+                return '<span class="badge badge-cancelada">' . htmlspecialchars(getOSStatusLabel($status)) . '</span>';
             default:
-                return '<span class="badge badge-aberta">' . htmlspecialchars(ucfirst($status)) . '</span>';
+                return '<span class="badge badge-aberta">' . htmlspecialchars(getOSStatusLabel($status)) . '</span>';
         }
     }
 }
 
 // Recupera símbolo monetário
 $currencySymbol = 'R$';
+$prazoMaximoRetirada = 90;
 try {
     $stmtCurrency = $pdo->query("SELECT * FROM config_sistema LIMIT 1");
     $sysConfig = $stmtCurrency->fetch();
     if ($sysConfig && isset($sysConfig['moeda']) && !empty($sysConfig['moeda'])) {
         $currencySymbol = $sysConfig['moeda'];
+    }
+    if ($sysConfig && isset($sysConfig['prazo_maximo_retirada'])) {
+        $prazoMaximoRetirada = (int)$sysConfig['prazo_maximo_retirada'];
     }
 } catch (PDOException $e) {
     // Fallback
@@ -231,12 +270,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $diagnostico             = trim(filter_input(INPUT_POST, 'diagnostico', FILTER_DEFAULT));
     $valor_mao_obra          = parseDecimalOS($_POST['valor_mao_obra'] ?? '0,00');
     $status                  = trim(filter_input(INPUT_POST, 'status', FILTER_DEFAULT));
+    if ($formAction === 'create') {
+        $status = 'aguardando_analise';
+    }
 
     // Coleta de arrays de peças dinâmicas vindas do formulário
     $postProdutos    = $_POST['item_produto_id'] ?? [];
     $postQuantidades = $_POST['item_quantidade'] ?? [];
 
-    if (!$id_cliente || !$id_equipamento || !$id_tecnico || empty($status)) {
+    $statusPermitidos = array_merge(array_keys(getOSStatusOptions()), ['reparo_concluido']);
+    if (!$id_cliente || !$id_equipamento || !$id_tecnico || empty($status) || !in_array($status, $statusPermitidos, true)) {
         $message = 'Cliente, Equipamento, Técnico Responsável e Status são de preenchimento obrigatório.';
         $messageType = 'danger';
     } else {
@@ -317,6 +360,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
                 }
 
+                if (isStockImpactStatus((string)$statusAnterior)) {
+                    $stmtItensAntigos = $pdo->prepare("SELECT id_produto, quantidade FROM item_os WHERE id_os = :id_os");
+                    $stmtItensAntigos->execute([':id_os' => $id_os]);
+                    $stmtRestauraEstoque = $pdo->prepare("UPDATE produto SET estoque = estoque + :qty WHERE id_produto = :id");
+
+                    foreach ($stmtItensAntigos->fetchAll() as $itemAntigo) {
+                        $stmtRestauraEstoque->execute([
+                            ':qty' => (int)$itemAntigo['quantidade'],
+                            ':id' => (int)$itemAntigo['id_produto'],
+                        ]);
+                    }
+                }
+
                 // Limpa itens antigos da OS antes do relançamento seguro (Master-Detail Puro)
                 $pdo->prepare("DELETE FROM item_os WHERE id_os = :id_os")->execute([':id_os' => $id_os]);
             }
@@ -334,8 +390,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $product = $stmtProdVal->fetch();
 
                         if ($product) {
-                            // Validação estrita de estoque antes da baixa (Ignora estoque se o status indicar encerramento sem conserto/abandono)
-                            if ($product['estoque'] < $qty && !in_array($status, ['sem_conserto', 'abandonado'])) {
+                            // Validação estrita de estoque somente quando a fase consome peça.
+                            if (isStockImpactStatus($status) && $product['estoque'] < $qty) {
                                 throw new Exception("Estoque insuficiente para o produto '" . $product['descricao'] . "'. Quantidade disponível: " . $product['estoque']);
                             }
 
@@ -352,8 +408,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 ':sub'     => $subtotal
                             ]);
 
-                            // Abate estoque caso o status não seja de encerramento improdutivo
-                            if (!in_array($status, ['sem_conserto', 'abandonado'])) {
+                            // Abate estoque apenas quando a OS entra em fase de reparo/saída.
+                            if (isStockImpactStatus($status)) {
                                 $stmtBaixaEstoque = $pdo->prepare("UPDATE produto SET estoque = estoque - :qty WHERE id_produto = :id");
                                 $stmtBaixaEstoque->execute([':qty' => $qty, ':id' => $prodId]);
                             }
@@ -423,11 +479,34 @@ if ($action === 'edit' && $editId) {
 // EXECUTAR EXCLUSÃO DE OS
 if ($action === 'delete' && $editId) {
     try {
+        $pdo->beginTransaction();
+
+        $stmtStatusDel = $pdo->prepare("SELECT status FROM os WHERE id_os = :id LIMIT 1");
+        $stmtStatusDel->execute([':id' => $editId]);
+        $statusExcluido = (string)$stmtStatusDel->fetchColumn();
+
+        if (isStockImpactStatus($statusExcluido)) {
+            $stmtItensDel = $pdo->prepare("SELECT id_produto, quantidade FROM item_os WHERE id_os = :id_os");
+            $stmtItensDel->execute([':id_os' => $editId]);
+            $stmtRestauraDel = $pdo->prepare("UPDATE produto SET estoque = estoque + :qty WHERE id_produto = :id");
+
+            foreach ($stmtItensDel->fetchAll() as $itemDel) {
+                $stmtRestauraDel->execute([
+                    ':qty' => (int)$itemDel['quantidade'],
+                    ':id' => (int)$itemDel['id_produto'],
+                ]);
+            }
+        }
+
         $stmtDel = $pdo->prepare("DELETE FROM os WHERE id_os = :id");
         $stmtDel->execute([':id' => $editId]);
+        $pdo->commit();
         $message = 'Ordem de Serviço removida com sucesso do sistema.';
         $messageType = 'success';
     } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         $message = 'Não é possível remover a OS selecionada devido a dependências ativas.';
         $messageType = 'danger';
     }
@@ -483,7 +562,7 @@ try {
 
     // 6. Listagem Geral de Ordens de Serviço (Junções Completas)
     $sqlOS = "
-        SELECT o.id_os, o.data_abertura, o.status, o.valor_total, 
+        SELECT o.id_os, o.data_abertura, o.updated_at, o.status, o.valor_total,
                pCli.nome AS cliente_nome, 
                e.aparelho, e.marca, 
                pTec.nome AS tecnico_nome 
@@ -582,18 +661,19 @@ try {
 
                                 <div class="form-group">
                                     <label for="status" class="form-label">Estado de Progresso (Status)</label>
-                                    <select id="status" name="status" class="form-control" required>
-                                        <option value="aguardando_analise" <?php echo ($editData['status'] === 'aguardando_analise') ? 'selected' : ''; ?>>Aguardando Análise</option>
-                                        <option value="em_diagnostico" <?php echo ($editData['status'] === 'em_diagnostico') ? 'selected' : ''; ?>>Em Diagnóstico</option>
-                                        <option value="aguardando_aprovacao" <?php echo ($editData['status'] === 'aguardando_aprovacao') ? 'selected' : ''; ?>>Aguardando Aprovação</option>
-                                        <option value="aguardando_peca" <?php echo ($editData['status'] === 'aguardando_peca') ? 'selected' : ''; ?>>Aguardando Peça</option>
-                                        <option value="em_reparo" <?php echo ($editData['status'] === 'em_reparo') ? 'selected' : ''; ?>>Em Reparo</option>
-                                        <option value="reparo_concluido" <?php echo ($editData['status'] === 'reparo_concluido') ? 'selected' : ''; ?>>Reparo Concluído</option>
-                                        <option value="sem_conserto" <?php echo ($editData['status'] === 'sem_conserto') ? 'selected' : ''; ?>>Sem Conserto</option>
-                                        <option value="pronto_para_retirada" <?php echo ($editData['status'] === 'pronto_para_retirada') ? 'selected' : ''; ?>>Pronto para Retirada</option>
-                                        <option value="entregue" <?php echo ($editData['status'] === 'entregue') ? 'selected' : ''; ?>>Entregue</option>
-                                        <option value="abandonado" <?php echo ($editData['status'] === 'abandonado') ? 'selected' : ''; ?>>Abandonado</option>
+                                    <select id="status" name="status" class="form-control" required <?php echo ($action === 'create') ? 'disabled' : ''; ?>>
+                                        <?php foreach (getOSStatusOptions() as $statusValue => $statusLabel): ?>
+                                            <option value="<?php echo htmlspecialchars($statusValue); ?>" <?php echo ($editData['status'] === $statusValue) ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($statusLabel); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                        <?php if ($editData['status'] === 'reparo_concluido'): ?>
+                                            <option value="reparo_concluido" selected>Reparo concluído (legado)</option>
+                                        <?php endif; ?>
                                     </select>
+                                    <?php if ($action === 'create'): ?>
+                                        <small class="form-label" style="margin-top: 6px; font-weight: normal; text-transform: none; letter-spacing: 0;">Toda nova OS inicia em Aguardando Análise.</small>
+                                    <?php endif; ?>
                                 </div>
                             </div>
 
@@ -623,8 +703,18 @@ try {
                                     <select id="select_produto" class="form-control">
                                         <option value="">Selecione um item...</option>
                                         <?php foreach ($produtosList as $prod): ?>
-                                            <option value="<?php echo $prod['id_produto']; ?>" data-preco="<?php echo $prod['valor']; ?>" data-estoque="<?php echo $prod['estoque']; ?>">
-                                                <?php echo htmlspecialchars($prod['descricao']) . ' (R$ ' . formatDecimalOS($prod['valor']) . ') [Estoque: ' . $prod['estoque'] . ']'; ?>
+                                            <?php
+                                            $estoqueDisponivel = (int)$prod['estoque'];
+                                            if ($action === 'edit' && isStockImpactStatus((string)$editData['status'])) {
+                                                foreach ($osItems as $itemExistente) {
+                                                    if ((int)$itemExistente['id_produto'] === (int)$prod['id_produto']) {
+                                                        $estoqueDisponivel += (int)$itemExistente['quantidade'];
+                                                    }
+                                                }
+                                            }
+                                            ?>
+                                            <option value="<?php echo $prod['id_produto']; ?>" data-preco="<?php echo $prod['valor']; ?>" data-estoque="<?php echo $estoqueDisponivel; ?>">
+                                                <?php echo htmlspecialchars($prod['descricao']) . ' (' . htmlspecialchars($currencySymbol) . ' ' . formatDecimalOS($prod['valor']) . ') [Disponível: ' . $estoqueDisponivel . ']'; ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
@@ -1219,7 +1309,7 @@ try {
 
                         const maxEstoque = parseInt(option.getAttribute('data-estoque'));
                         const preco = parseFloat(option.getAttribute('data-preco'));
-                        const descricao = option.text.split(' (');
+                        const descricao = option.text.split(' (')[0];
 
                         // Verifica estoque disponível
                         const jaAdicionado = pecasLancadas.find(p => p.id_produto == prodId);
@@ -1270,7 +1360,7 @@ try {
                                 ${peca.quantidade}
                                 <input type="hidden" name="item_quantidade[]" value="${peca.quantidade}">
                             </td>
-                            <td style="text-align: right;">R$ ${floatToString(peca.subtotal)}</td>
+                            <td style="text-align: right;"><?php echo htmlspecialchars($currencySymbol); ?> ${floatToString(peca.subtotal)}</td>
                             <td style="text-align: right;">
                                 <button type="button" class="btn-remove-item" style="color: var(--danger); cursor: pointer; background:none; font-size:16px;">&times;</button>
                             </td>
@@ -1289,8 +1379,8 @@ try {
                     let maoObra = stringToFloat(inputMaoObra.value);
                     let totalGeral = totalPecas + maoObra;
 
-                    displayPecasTotal.textContent = 'R$ ' + floatToString(totalPecas);
-                    displayOSTotal.textContent = 'R$ ' + floatToString(totalGeral);
+                    displayPecasTotal.textContent = '<?php echo htmlspecialchars($currencySymbol); ?> ' + floatToString(totalPecas);
+                    displayOSTotal.textContent = '<?php echo htmlspecialchars($currencySymbol); ?> ' + floatToString(totalGeral);
                 }
 
                 // Notificação de Sucesso
@@ -1382,6 +1472,14 @@ try {
                             </thead>
                             <tbody>
                                 <?php foreach ($osList as $os): ?>
+                                    <?php
+                                    $baseRetirada = $os['updated_at'] ?: $os['data_abertura'];
+                                    $diasAguardandoRetirada = 0;
+                                    if (isWithdrawalStatus($os['status']) && $os['status'] !== 'entregue') {
+                                        $diasAguardandoRetirada = (new DateTime($baseRetirada))->diff(new DateTime())->days;
+                                    }
+                                    $retiradaVencida = $diasAguardandoRetirada > $prazoMaximoRetirada;
+                                    ?>
                                     <tr>
                                         <td><code>#<?php echo $os['id_os']; ?></code></td>
                                         <td><?php echo date('d/m/Y H:i', strtotime($os['data_abertura'])); ?></td>
@@ -1393,6 +1491,13 @@ try {
                                         <td><?php echo htmlspecialchars($os['tecnico_nome']); ?></td>
                                         <td>
                                             <?php echo getStatusBadge($os['status']); ?>
+                                            <?php if ($retiradaVencida): ?>
+                                                <span class="badge badge-cancelada" style="margin-top: 6px;">Prazo vencido</span>
+                                            <?php elseif (isWithdrawalStatus($os['status']) && $os['status'] !== 'entregue'): ?>
+                                                <span style="display: block; font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">
+                                                    <?php echo $diasAguardandoRetirada; ?>/<?php echo $prazoMaximoRetirada; ?> dias para retirada
+                                                </span>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <strong style="color: var(--success); font-size: 14.5px;">
@@ -1402,8 +1507,13 @@ try {
                                         <td style="text-align: right;">
                                             <!-- Botão de Impressão Direta -->
                                             <a href="index.php?page=imprimir_os&id=<?php echo $os['id_os']; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px; background-color: rgba(16, 185, 129, 0.1); color: #10b981; border-color: rgba(16, 185, 129, 0.2);">
-                                                Imprimir
+                                                Entrada
                                             </a>
+                                            <?php if (isWithdrawalStatus($os['status'])): ?>
+                                                <a href="index.php?page=imprimir_retirada&id=<?php echo $os['id_os']; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px; background-color: rgba(245, 158, 11, 0.1); color: #f59e0b; border-color: rgba(245, 158, 11, 0.2);">
+                                                    Retirada
+                                                </a>
+                                            <?php endif; ?>
                                             <!-- Botão de Linha do Tempo/Auditoria -->
                                             <a href="index.php?page=historico_os&id=<?php echo $os['id_os']; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px; background-color: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59, 130, 246, 0.2);">
                                                 Histórico
