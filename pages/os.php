@@ -75,7 +75,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['ajax_action'])) {
             $id_pessoa = Pessoa::create($pdo, $pessoaData);
 
             // Insere na tabela dependente 'cliente'
-            $sqlCliente = "INSERT INTO cliente (id_pessoa, data_ultima_interacao) VALUES (:id_pessoa, NULL)";
+            $sqlCliente = "INSERT INTO cliente (id_pessoa, tipo_cliente, origem, whatsapp_autorizado, status, data_ultima_interacao)
+                           VALUES (:id_pessoa, 'PARTICULAR', 'OS rápida', 1, 1, NULL)";
             $pdo->prepare($sqlCliente)->execute([':id_pessoa' => $id_pessoa]);
 
             $pdo->commit();
@@ -529,7 +530,7 @@ try {
         SELECT p.id_pessoa, p.nome, p.cpf_cnpj 
         FROM cliente c 
         INNER JOIN pessoa p ON c.id_pessoa = p.id_pessoa 
-        WHERE p.status = 1 
+        WHERE p.status = 1 AND c.status = 1
         ORDER BY p.nome ASC
     ")->fetchAll();
 
@@ -550,10 +551,10 @@ try {
 
     // 4. Técnicos/Funcionários ativos no sistema
     $tecnicosList = $pdo->query("
-        SELECT p.id_pessoa, p.nome, f.cargo 
+        SELECT p.id_pessoa, p.nome, f.cargo, f.perfil_acesso
         FROM funcionario f 
         INNER JOIN pessoa p ON f.id_pessoa = p.id_pessoa 
-        WHERE p.status = 1 AND f.cargo IN ('Técnico', 'Administrador')
+        WHERE p.status = 1 AND f.status = 1 AND (f.cargo IN ('Técnico', 'Administrador') OR f.perfil_acesso IN ('Técnico', 'Administrador'))
         ORDER BY p.nome ASC
     ")->fetchAll();
 

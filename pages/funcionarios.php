@@ -69,7 +69,9 @@ $editData = [
     'nome' => '', 'tipo_pessoa' => 'FISICA', 'cpf_cnpj' => '', 'rg_ie' => '',
     'telefone' => '', 'cep' => '', 'endereco' => '', 'numero' => '',
     'bairro' => '', 'id_cidade' => '', 'status' => 1,
-    'cargo' => 'Atendente', 'salario' => '0,00',
+    'cargo' => 'Atendente', 'perfil_acesso' => 'Atendente',
+    'data_admissao' => date('Y-m-d'), 'data_desligamento' => '',
+    'salario' => '0,00',
     'comissao_os' => 0, 'valor_comissao_os' => '0,00',
     'comissao_mo' => 0, 'valor_comissao_mo' => '0,00'
 ];
@@ -92,12 +94,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'numero'      => trim(filter_input(INPUT_POST, 'numero', FILTER_DEFAULT)),
         'bairro'      => trim(filter_input(INPUT_POST, 'bairro', FILTER_DEFAULT)),
         'id_cidade'   => filter_input(INPUT_POST, 'id_cidade', FILTER_VALIDATE_INT),
-        'status'      => isset($_POST['status']) ? (int)$_POST['status'] : 1
+        'status'      => 1
     ];
 
     // Trata e converte os campos de moeda mascarados para float puro da base de dados
     $funcionarioFields = [
         'cargo'             => trim(filter_input(INPUT_POST, 'cargo', FILTER_DEFAULT)),
+        'perfil_acesso'     => trim(filter_input(INPUT_POST, 'perfil_acesso', FILTER_DEFAULT)) ?: 'Atendente',
+        'data_admissao'     => trim(filter_input(INPUT_POST, 'data_admissao', FILTER_DEFAULT)) ?: null,
+        'data_desligamento' => trim(filter_input(INPUT_POST, 'data_desligamento', FILTER_DEFAULT)) ?: null,
+        'status'            => isset($_POST['status']) ? (int)$_POST['status'] : 1,
         'salario'           => parseBrazilianDecimal($_POST['salario'] ?? '0,00'),
         'comissao_os'       => isset($_POST['comissao_os']) ? 1 : 0,
         'valor_comissao_os' => parseBrazilianDecimal($_POST['valor_comissao_os'] ?? '0,00'),
@@ -107,6 +113,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $postedEditData = array_merge($editData, $pessoaFields, [
         'cargo'             => $funcionarioFields['cargo'],
+        'perfil_acesso'     => $funcionarioFields['perfil_acesso'],
+        'data_admissao'     => $funcionarioFields['data_admissao'] ?? '',
+        'data_desligamento' => $funcionarioFields['data_desligamento'] ?? '',
+        'status'            => $funcionarioFields['status'],
         'salario'           => trim($_POST['salario'] ?? '0,00'),
         'comissao_os'       => $funcionarioFields['comissao_os'],
         'valor_comissao_os' => trim($_POST['valor_comissao_os'] ?? '0,00'),
@@ -126,15 +136,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $pdo->beginTransaction();
 
-                // Cria o registo na tabela base 'pessoa' utilizando a classe base
-                $id_pessoa = Pessoa::create($pdo, $pessoaFields);
+                $pessoaExistente = Pessoa::getByDocumento($pdo, $pessoaFields['cpf_cnpj']);
+
+                if ($pessoaExistente) {
+                    $id_pessoa = (int)$pessoaExistente['id_pessoa'];
+
+                    $stmtFuncionarioExistente = $pdo->prepare("SELECT id_pessoa FROM funcionario WHERE id_pessoa = :id LIMIT 1");
+                    $stmtFuncionarioExistente->execute([':id' => $id_pessoa]);
+                    if ($stmtFuncionarioExistente->fetch()) {
+                        throw new Exception('Esta pessoa já está cadastrada como funcionário.');
+                    }
+
+                    Pessoa::update($pdo, $id_pessoa, $pessoaFields);
+                } else {
+                    // Cria o registo na tabela base 'pessoa' utilizando a classe base
+                    $id_pessoa = Pessoa::create($pdo, $pessoaFields);
+                }
+
+                $stmtClienteExistente = $pdo->prepare("SELECT id_pessoa FROM cliente WHERE id_pessoa = :id LIMIT 1");
+                $stmtClienteExistente->execute([':id' => $id_pessoa]);
+                if (!$stmtClienteExistente->fetch()) {
+                    $stmtCliente = $pdo->prepare("
+                        INSERT INTO cliente (id_pessoa, tipo_cliente, origem, whatsapp_autorizado, status, data_ultima_interacao)
+                        VALUES (:id_pessoa, 'PARTICULAR', 'Funcionário', 1, 1, NULL)
+                    ");
+                    $stmtCliente->execute([':id_pessoa' => $id_pessoa]);
+                }
 
                 // Insere na tabela 'funcionario' com os valores já convertidos para float
                 $sqlFunc = "INSERT INTO funcionario (
-                                id_pessoa, cargo, salario, comissao_os, 
+                                id_pessoa, cargo, perfil_acesso, data_admissao, data_desligamento, status, salario, comissao_os, 
                                 valor_comissao_os, comissao_mo, valor_comissao_mo
                             ) VALUES (
-                                :id_pessoa, :cargo, :salario, :comissao_os, 
+                                :id_pessoa, :cargo, :perfil_acesso, :data_admissao, :data_desligamento, :status, :salario, :comissao_os, 
                                 :valor_comissao_os, :comissao_mo, :valor_comissao_mo
                             )";
                 
@@ -142,6 +176,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmtFunc->execute([
                     ':id_pessoa'          => $id_pessoa,
                     ':cargo'              => $funcionarioFields['cargo'],
+                    ':perfil_acesso'      => $funcionarioFields['perfil_acesso'],
+                    ':data_admissao'      => $funcionarioFields['data_admissao'],
+                    ':data_desligamento'  => $funcionarioFields['data_desligamento'],
+                    ':status'             => $funcionarioFields['status'],
                     ':salario'            => $funcionarioFields['salario'],
                     ':comissao_os'        => $funcionarioFields['comissao_os'],
                     ':valor_comissao_os'  => $funcionarioFields['valor_comissao_os'],
@@ -157,7 +195,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'nome' => '', 'tipo_pessoa' => 'FISICA', 'cpf_cnpj' => '', 'rg_ie' => '',
                     'telefone' => '', 'cep' => '', 'endereco' => '', 'numero' => '',
                     'bairro' => '', 'id_cidade' => '', 'status' => 1,
-                    'cargo' => 'Atendente', 'salario' => '0,00',
+                    'cargo' => 'Atendente', 'perfil_acesso' => 'Atendente',
+                    'data_admissao' => date('Y-m-d'), 'data_desligamento' => '',
+                    'salario' => '0,00',
                     'comissao_os' => 0, 'valor_comissao_os' => '0,00',
                     'comissao_mo' => 0, 'valor_comissao_mo' => '0,00'
                 ];
@@ -189,6 +229,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Atualiza os dados na tabela 'funcionario'
                 $sqlFuncUpdate = "UPDATE funcionario SET 
                                     cargo = :cargo, 
+                                    perfil_acesso = :perfil_acesso,
+                                    data_admissao = :data_admissao,
+                                    data_desligamento = :data_desligamento,
+                                    status = :status,
                                     salario = :salario, 
                                     comissao_os = :comissao_os, 
                                     valor_comissao_os = :valor_comissao_os, 
@@ -199,6 +243,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmtFuncUpdate = $pdo->prepare($sqlFuncUpdate);
                 $stmtFuncUpdate->execute([
                     ':cargo'              => $funcionarioFields['cargo'],
+                    ':perfil_acesso'      => $funcionarioFields['perfil_acesso'],
+                    ':data_admissao'      => $funcionarioFields['data_admissao'],
+                    ':data_desligamento'  => $funcionarioFields['data_desligamento'],
+                    ':status'             => $funcionarioFields['status'],
                     ':salario'            => $funcionarioFields['salario'],
                     ':comissao_os'        => $funcionarioFields['comissao_os'],
                     ':valor_comissao_os'  => $funcionarioFields['valor_comissao_os'],
@@ -227,7 +275,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ==========================================================================
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $action === 'edit' && $editId) {
     try {
-        $sqlEdit = "SELECT p.*, f.cargo, f.salario, f.comissao_os, f.valor_comissao_os, f.comissao_mo, f.valor_comissao_mo 
+        $sqlEdit = "SELECT p.*, f.cargo, f.perfil_acesso, f.data_admissao, f.data_desligamento, f.status AS status, f.salario, f.comissao_os, f.valor_comissao_os, f.comissao_mo, f.valor_comissao_mo 
                     FROM pessoa p 
                     INNER JOIN funcionario f ON p.id_pessoa = f.id_pessoa 
                     WHERE p.id_pessoa = :id LIMIT 1";
@@ -256,16 +304,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $action === 'edit' && $editId) {
 // 2. ATIVAR / INATIVAR FUNCIONÁRIO (Inativação Lógica)
 if ($action === 'toggle_status' && $editId) {
     try {
-        $pessoa = Pessoa::getById($pdo, $editId);
-        if ($pessoa) {
-            $newStatus = ($pessoa['status'] == 1) ? 0 : 1;
+        $stmtFuncionarioStatus = $pdo->prepare("SELECT status FROM funcionario WHERE id_pessoa = :id LIMIT 1");
+        $stmtFuncionarioStatus->execute([':id' => $editId]);
+        $funcionario = $stmtFuncionarioStatus->fetch();
+        if ($funcionario) {
+            $newStatus = ($funcionario['status'] == 1) ? 0 : 1;
             
             // Impede que o Administrador desative o seu próprio utilizador em uso
             if ($editId == $_SESSION['user_id'] && $newStatus == 0) {
                 $message = 'Por motivos de segurança, não pode desativar a sua própria conta ativa.';
                 $messageType = 'danger';
             } else {
-                Pessoa::setStatus($pdo, $editId, $newStatus);
+                $dataDesligamentoSql = $newStatus == 0 ? 'COALESCE(data_desligamento, CURDATE())' : 'NULL';
+                $stmtSetFuncionario = $pdo->prepare("UPDATE funcionario SET status = :status, data_desligamento = {$dataDesligamentoSql} WHERE id_pessoa = :id");
+                $stmtSetFuncionario->execute([':status' => $newStatus, ':id' => $editId]);
                 $message = 'Status do funcionário alterado com sucesso!';
                 $messageType = 'success';
             }
@@ -293,7 +345,8 @@ try {
     $cidadesList = $stmtCid->fetchAll();
 
     $stmtFuncs = $pdo->query("
-        SELECT p.id_pessoa, p.nome, IFNULL(p.cpf_cnpj, '') AS cpf_cnpj, p.telefone, p.status, f.cargo, f.salario 
+        SELECT p.id_pessoa, p.nome, IFNULL(p.cpf_cnpj, '') AS cpf_cnpj, p.telefone,
+               f.status, f.cargo, f.perfil_acesso, f.data_admissao, f.salario 
         FROM pessoa p 
         INNER JOIN funcionario f ON p.id_pessoa = f.id_pessoa 
         ORDER BY p.nome ASC
@@ -329,16 +382,23 @@ try {
             
             <?php if ($action === 'create' || $action === 'edit'): ?>
                 <div class="card">
-                    <h2 class="card-title" style="<?php echo ($action === 'edit') ? 'color: var(--warning);' : ''; ?>">
+                    <div class="module-header">
+                        <div>
+                            <h2 class="module-title" style="<?php echo ($action === 'edit') ? 'color: var(--warning);' : ''; ?>">
                         <?php echo ($action === 'edit') ? 'Editar Funcionário' : 'Novo Funcionário'; ?>
-                    </h2>
+                            </h2>
+                            <p class="module-subtitle">Dados pessoais, acesso, remuneração e comissões do funcionário.</p>
+                        </div>
+                        <a href="index.php?page=funcionarios" class="btn btn-secondary">Voltar</a>
+                    </div>
                     
                     <form id="formFuncionario" action="index.php?page=funcionarios<?php echo ($action === 'edit') ? '&id=' . $editId : ''; ?>" method="POST" autocomplete="off">
                         <input type="hidden" name="form_action" value="<?php echo ($action === 'edit') ? 'update' : 'create'; ?>">
 
-                        <h3 style="font-size: 14px; text-transform: uppercase; color: var(--primary); margin-bottom: 16px;">1. Informações Pessoais</h3>
+                        <div class="form-section">
+                        <h3 class="form-section-title">1. Informações Pessoais</h3>
                         
-                        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 20px;">
+                        <div class="form-grid form-grid-wide">
                             <div class="form-group">
                                 <label for="nome" class="form-label">Nome Completo</label>
                                 <input type="text" id="nome" name="nome" class="form-control" value="<?php echo htmlspecialchars($editData['nome']); ?>" required>
@@ -353,7 +413,7 @@ try {
                             </div>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 20px;">
+                        <div class="form-grid address-grid">
                             <div class="form-group">
                                 <label for="cep" class="form-label">CEP</label>
                                 <input type="text" id="cep" name="cep" class="form-control" placeholder="79800-000" value="<?php echo htmlspecialchars($editData['cep']); ?>" maxlength="9">
@@ -368,7 +428,7 @@ try {
                             </div>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 2fr 2fr; gap: 20px;">
+                        <div class="form-grid" style="grid-template-columns: 1fr 2fr 2fr;">
                             <div class="form-group">
                                 <label for="numero" class="form-label">Número</label>
                                 <input type="text" id="numero" name="numero" class="form-control" value="<?php echo htmlspecialchars($editData['numero']); ?>">
@@ -390,9 +450,12 @@ try {
                             </div>
                         </div>
 
-                        <h3 style="font-size: 14px; text-transform: uppercase; color: var(--primary); margin-top: 20px; margin-bottom: 16px;">2. Cargo e Remuneração</h3>
+                        </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div class="form-section">
+                        <h3 class="form-section-title">2. Cargo e Remuneração</h3>
+
+                        <div class="form-grid form-grid-3">
                             <div class="form-group">
                                 <label for="cargo" class="form-label">Cargo</label>
                                 <select id="cargo" name="cargo" class="form-control" required>
@@ -402,15 +465,39 @@ try {
                                 </select>
                             </div>
                             <div class="form-group">
+                                <label for="perfil_acesso" class="form-label">Perfil de Acesso</label>
+                                <select id="perfil_acesso" name="perfil_acesso" class="form-control" required>
+                                    <option value="Administrador" <?php echo ($editData['perfil_acesso'] === 'Administrador') ? 'selected' : ''; ?>>Administrador</option>
+                                    <option value="Atendente" <?php echo ($editData['perfil_acesso'] === 'Atendente') ? 'selected' : ''; ?>>Atendente</option>
+                                    <option value="Técnico" <?php echo ($editData['perfil_acesso'] === 'Técnico') ? 'selected' : ''; ?>>Técnico</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
                                 <label for="salario" class="form-label">Salário Base (<?php echo htmlspecialchars($currencySymbol); ?>)</label>
                                 <input type="text" id="salario" name="salario" class="form-control text-right" placeholder="0,00" value="<?php echo htmlspecialchars($editData['salario']); ?>" required style="text-align: right;">
                             </div>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 10px; background-color: rgba(255, 255, 255, 0.02); padding: 20px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+                        <div class="form-grid form-grid-2">
+                            <div class="form-group">
+                                <label for="data_admissao" class="form-label">Data de Admissão</label>
+                                <input type="date" id="data_admissao" name="data_admissao" class="form-control" value="<?php echo htmlspecialchars($editData['data_admissao'] ?? ''); ?>">
+                            </div>
+                            <div class="form-group">
+                                <label for="data_desligamento" class="form-label">Data de Desligamento</label>
+                                <input type="date" id="data_desligamento" name="data_desligamento" class="form-control" value="<?php echo htmlspecialchars($editData['data_desligamento'] ?? ''); ?>">
+                            </div>
+                        </div>
+
+                        </div>
+
+                        <div class="form-section">
+                        <h3 class="form-section-title">3. Comissões e Status</h3>
+
+                        <div class="form-grid form-grid-2">
                             <div>
-                                <label style="display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer;">
-                                    <input type="checkbox" name="comissao_os" value="1" <?php echo ($editData['comissao_os'] == 1) ? 'checked' : ''; ?> style="width: 18px; height: 18px;">
+                                <label class="choice-option">
+                                    <input type="checkbox" name="comissao_os" value="1" <?php echo ($editData['comissao_os'] == 1) ? 'checked' : ''; ?>>
                                     Ativar Comissão sobre Peças (%)
                                 </label>
                                 <div class="form-group" style="margin-top: 12px;">
@@ -418,8 +505,8 @@ try {
                                 </div>
                             </div>
                             <div>
-                                <label style="display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer;">
-                                    <input type="checkbox" name="comissao_mo" value="1" <?php echo ($editData['comissao_mo'] == 1) ? 'checked' : ''; ?> style="width: 18px; height: 18px;">
+                                <label class="choice-option">
+                                    <input type="checkbox" name="comissao_mo" value="1" <?php echo ($editData['comissao_mo'] == 1) ? 'checked' : ''; ?>>
                                     Ativar Comissão sobre Mão de Obra (%)
                                 </label>
                                 <div class="form-group" style="margin-top: 12px;">
@@ -434,6 +521,7 @@ try {
                                 <option value="1" <?php echo ($editData['status'] == 1) ? 'selected' : ''; ?>>Ativo</option>
                                 <option value="0" <?php echo ($editData['status'] == 0) ? 'selected' : ''; ?>>Inativo</option>
                             </select>
+                        </div>
                         </div>
 
                         <div style="display: flex; gap: 12px; margin-top: 32px; justify-content: flex-end;">
@@ -649,8 +737,11 @@ try {
                 
                 <!-- Listagem Geral de Funcionários -->
                 <div class="card">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                        <h2 class="card-title" style="margin-bottom: 0;">Funcionários Ativos no Sistema</h2>
+                    <div class="module-header">
+                        <div>
+                            <h2 class="module-title">Funcionários Registados</h2>
+                            <p class="module-subtitle"><?php echo count($funcionariosList); ?> funcionário(s) no cadastro.</p>
+                        </div>
                         <a href="index.php?page=funcionarios&action=create" class="btn btn-primary">
                             Registar Novo Funcionário
                         </a>
@@ -667,6 +758,7 @@ try {
                                         <th>Nome Completo</th>
                                         <th>CPF</th>
                                         <th>Cargo</th>
+                                        <th>Perfil</th>
                                         <th>Salário Base</th>
                                         <th>Status</th>
                                         <th style="width: 200px; text-align: right;">Ações</th>
@@ -675,12 +767,20 @@ try {
                                 <tbody>
                                     <?php foreach ($funcionariosList as $func): ?>
                                         <tr style="<?php echo ($func['status'] == 0) ? 'opacity: 0.6;' : ''; ?>">
-                                            <td><?php echo $func['id_pessoa']; ?></td>
-                                            <td><strong><?php echo htmlspecialchars($func['nome']); ?></strong></td>
+                                            <td><code>#<?php echo $func['id_pessoa']; ?></code></td>
+                                            <td>
+                                                <div class="table-primary-text"><?php echo htmlspecialchars($func['nome']); ?></div>
+                                                <div class="table-muted-text">Admissão: <?php echo !empty($func['data_admissao']) ? date('d/m/Y', strtotime($func['data_admissao'])) : 'Não informada'; ?></div>
+                                            </td>
                                             <td><?php echo htmlspecialchars($func['cpf_cnpj'] !== '' ? $func['cpf_cnpj'] : 'Não informado'); ?></td>
                                             <td>
                                                 <span class="badge" style="background-color: var(--info-bg); color: var(--info);">
                                                     <?php echo htmlspecialchars($func['cargo']); ?>
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="badge" style="background-color: var(--warning-bg); color: var(--warning);">
+                                                    <?php echo htmlspecialchars($func['perfil_acesso']); ?>
                                                 </span>
                                             </td>
                                             <td><?php echo htmlspecialchars($currencySymbol); ?> <?php echo formatBrazilianDecimal($func['salario']); ?></td>
@@ -692,6 +792,7 @@ try {
                                                 <?php endif; ?>
                                             </td>
                                             <td style="text-align: right;">
+                                                <div class="action-group">
                                                 <a href="index.php?page=funcionarios&action=edit&id=<?php echo $func['id_pessoa']; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px;">
                                                     Editar
                                                 </a>
@@ -711,6 +812,7 @@ try {
                                                         Ativar
                                                     </button>
                                                 <?php endif; ?>
+                                                </div>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>

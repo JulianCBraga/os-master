@@ -83,6 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               `tipo_pessoa` enum('FISICA','JURIDICA') NOT NULL,
               `nome` varchar(100) NOT NULL,
               `cpf_cnpj` varchar(20) DEFAULT NULL,
+              `cpf_cnpj_limpo` varchar(14) DEFAULT NULL,
               `rg_ie` varchar(20) DEFAULT NULL,
               `telefone` varchar(20) DEFAULT NULL,
               `cep` varchar(10) DEFAULT NULL,
@@ -95,12 +96,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               `updated_at` datetime DEFAULT NULL ON UPDATE current_timestamp(),
               PRIMARY KEY (`id_pessoa`),
               UNIQUE KEY `cpf_cnpj` (`cpf_cnpj`),
+              UNIQUE KEY `cpf_cnpj_limpo` (`cpf_cnpj_limpo`),
               KEY `fk_pessoa_cidade` (`id_cidade`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
             
             // Tabela: cliente
             "CREATE TABLE `cliente` (
               `id_pessoa` int(11) NOT NULL,
+              `tipo_cliente` enum('PARTICULAR','EMPRESA','REVENDA') DEFAULT 'PARTICULAR',
+              `origem` varchar(50) DEFAULT NULL,
+              `whatsapp_autorizado` tinyint(1) DEFAULT 1,
+              `observacoes` text DEFAULT NULL,
+              `status` tinyint(1) DEFAULT 1,
               `data_ultima_interacao` datetime DEFAULT NULL,
               PRIMARY KEY (`id_pessoa`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
@@ -137,6 +144,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             "CREATE TABLE `funcionario` (
               `id_pessoa` int(11) NOT NULL,
               `cargo` varchar(50) DEFAULT NULL,
+              `perfil_acesso` enum('Administrador','Atendente','Técnico') DEFAULT 'Atendente',
+              `data_admissao` date DEFAULT NULL,
+              `data_desligamento` date DEFAULT NULL,
+              `status` tinyint(1) DEFAULT 1,
               `salario` decimal(10,2) DEFAULT 0.00,
               `comissao_os` tinyint(1) DEFAULT 0,
               `valor_comissao_os` decimal(10,2) DEFAULT 0.00,
@@ -303,15 +314,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // 4.3. Pessoa Padrão para o Administrador
         $stmtPessoa = $pdoInit->prepare("INSERT INTO `pessoa` 
-            (`id_pessoa`, `tipo_pessoa`, `nome`, `cpf_cnpj`, `rg_ie`, `telefone`, `cep`, `endereco`, `numero`, `bairro`, `id_cidade`, `status`) 
-            VALUES (1, 'FISICA', 'Administrador do Sistema', '000.000.000-00', '0000000', '(67) 99999-9999', '79800-000', 'Rua Central de Testes', '100', 'Centro', 1, 1)
+            (`id_pessoa`, `tipo_pessoa`, `nome`, `cpf_cnpj`, `cpf_cnpj_limpo`, `rg_ie`, `telefone`, `cep`, `endereco`, `numero`, `bairro`, `id_cidade`, `status`) 
+            VALUES (1, 'FISICA', 'Administrador do Sistema', NULL, NULL, '0000000', '(67) 99999-9999', '79800-000', 'Rua Central de Testes', '100', 'Centro', 1, 1)
             ON DUPLICATE KEY UPDATE `id_pessoa`=1;");
         $stmtPessoa->execute();
 
+        // 4.4. Cliente Padrão vinculado ao administrador
+        $stmtClienteAdmin = $pdoInit->prepare("INSERT INTO `cliente`
+            (`id_pessoa`, `tipo_cliente`, `origem`, `whatsapp_autorizado`, `status`, `data_ultima_interacao`)
+            VALUES (1, 'PARTICULAR', 'Instalação inicial', 1, 1, NULL)
+            ON DUPLICATE KEY UPDATE `id_pessoa`=1;");
+        $stmtClienteAdmin->execute();
+
         // 4.4. Funcionário Padrão (Administrador / Supervisor)
         $stmtFunc = $pdoInit->prepare("INSERT INTO `funcionario` 
-            (`id_pessoa`, `cargo`, `salario`, `comissao_os`, `valor_comissao_os`, `comissao_mo`, `valor_comissao_mo`) 
-            VALUES (1, 'Administrador', 3500.00, 1, 10.00, 1, 15.00)
+            (`id_pessoa`, `cargo`, `perfil_acesso`, `data_admissao`, `status`, `salario`, `comissao_os`, `valor_comissao_os`, `comissao_mo`, `valor_comissao_mo`) 
+            VALUES (1, 'Administrador', 'Administrador', CURDATE(), 1, 3500.00, 1, 10.00, 1, 15.00)
             ON DUPLICATE KEY UPDATE `id_pessoa`=1;");
         $stmtFunc->execute();
 

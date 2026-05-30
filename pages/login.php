@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         try {
             // Consulta para verificar o utilizador na tabela 'usuario'
             // Junta com 'funcionario' e 'pessoa' para obter os dados do perfil e cargo de uma vez só
-            $sql = "SELECT u.id_pessoa, u.senha, u.ativo, p.nome, f.cargo 
+            $sql = "SELECT u.id_pessoa, u.senha, u.ativo, p.nome, f.cargo, f.perfil_acesso, f.status AS funcionario_status
                     FROM usuario u
                     INNER JOIN pessoa p ON u.id_pessoa = p.id_pessoa
                     LEFT JOIN funcionario f ON u.id_pessoa = f.id_pessoa
@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
             // Verifica se o utilizador existe e se está ativo no sistema
             if ($user) {
-                if ($user['ativo'] == 0) {
+                if ($user['ativo'] == 0 || (isset($user['funcionario_status']) && $user['funcionario_status'] == 0)) {
                     $loginError = 'Esta conta de usuário encontra-se desativada no sistema.';
                 } else {
                     // Valida a palavra-passe encriptada na base de dados
@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         $_SESSION['user_id'] = $user['id_pessoa'];
                         $_SESSION['user_name'] = $user['nome'];
                         $_SESSION['user_login'] = $username;
-                        $_SESSION['user_role'] = $user['cargo'] ?? 'Atendente'; // Padrão caso não tenha cargo definido
+                        $_SESSION['user_role'] = $user['perfil_acesso'] ?? $user['cargo'] ?? 'Atendente'; // Padrão caso não tenha perfil definido
                         
                         // Redireciona para o painel principal (Dashboard)
                         header("Location: index.php?page=dashboard");

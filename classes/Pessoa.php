@@ -66,7 +66,7 @@ class Pessoa {
         }
         
         $resultado = $soma % 11 < 2 ? 0 : 11 - ($soma % 11);
-        if ($resultado != $digitos) {
+        if ($resultado != (int)$digitos[0]) {
             return false;
         }
         
@@ -84,7 +84,7 @@ class Pessoa {
         }
         
         $resultado = $soma % 11 < 2 ? 0 : 11 - ($soma % 11);
-        if ($resultado != $digitos) {
+        if ($resultado != (int)$digitos[1]) {
             return false;
         }
         
@@ -118,11 +118,16 @@ class Pessoa {
 
             // Verifica duplicados ignorando pontos, hifens e barras na comparação
             $sqlCheck = "SELECT cpf_cnpj FROM pessoa 
-                         WHERE cpf_cnpj = :raw 
-                         OR REPLACE(REPLACE(REPLACE(cpf_cnpj, '.', ''), '-', ''), '/', '') = :clean";
+                         WHERE cpf_cnpj_limpo = :clean_doc
+                         OR cpf_cnpj = :raw 
+                         OR REPLACE(REPLACE(REPLACE(cpf_cnpj, '.', ''), '-', ''), '/', '') = :clean_legacy";
             
             $stmtCheck = $pdo->prepare($sqlCheck);
-            $stmtCheck->execute([':raw' => $rawCpfCnpj, ':clean' => $cpfCnpjClean]);
+            $stmtCheck->execute([
+                ':clean_doc' => $cpfCnpjClean,
+                ':raw' => $rawCpfCnpj,
+                ':clean_legacy' => $cpfCnpjClean
+            ]);
             if ($stmtCheck->fetch()) {
                 throw new Exception("Já existe uma pessoa registada com este CPF/CNPJ.");
             }
@@ -131,10 +136,10 @@ class Pessoa {
         }
 
         $sql = "INSERT INTO pessoa (
-                    tipo_pessoa, nome, cpf_cnpj, rg_ie, telefone, 
+                    tipo_pessoa, nome, cpf_cnpj, cpf_cnpj_limpo, rg_ie, telefone, 
                     cep, endereco, numero, bairro, id_cidade, status
                 ) VALUES (
-                    :tipo_pessoa, :nome, :cpf_cnpj, :rg_ie, :telefone, 
+                    :tipo_pessoa, :nome, :cpf_cnpj, :cpf_cnpj_limpo, :rg_ie, :telefone, 
                     :cep, :endereco, :numero, :bairro, :id_cidade, :status
                 )";
 
@@ -143,6 +148,7 @@ class Pessoa {
             ':tipo_pessoa' => $data['tipo_pessoa'],
             ':nome'        => trim($data['nome']),
             ':cpf_cnpj'    => $rawCpfCnpj, // Salva o valor com a máscara original
+            ':cpf_cnpj_limpo' => $cpfCnpjClean ?: null,
             ':rg_ie'       => trim($data['rg_ie'] ?? ''),
             ':telefone'    => trim($data['telefone'] ?? ''),
             ':cep'         => trim($data['cep'] ?? ''),
@@ -182,11 +188,16 @@ class Pessoa {
 
             // Validação de duplicados excluindo o próprio ID (ignora formatação)
             $sqlCheck = "SELECT cpf_cnpj FROM pessoa 
-                         WHERE (cpf_cnpj = :raw OR REPLACE(REPLACE(REPLACE(cpf_cnpj, '.', ''), '-', ''), '/', '') = :clean) 
+                         WHERE (cpf_cnpj_limpo = :clean_doc OR cpf_cnpj = :raw OR REPLACE(REPLACE(REPLACE(cpf_cnpj, '.', ''), '-', ''), '/', '') = :clean_legacy) 
                          AND id_pessoa != :id";
             
             $stmtCheck = $pdo->prepare($sqlCheck);
-            $stmtCheck->execute([':raw' => $rawCpfCnpj, ':clean' => $cpfCnpjClean, ':id' => $id]);
+            $stmtCheck->execute([
+                ':clean_doc' => $cpfCnpjClean,
+                ':raw' => $rawCpfCnpj,
+                ':clean_legacy' => $cpfCnpjClean,
+                ':id' => $id
+            ]);
             if ($stmtCheck->fetch()) {
                 throw new Exception("Outra pessoa registada já utiliza este CPF/CNPJ.");
             }
@@ -198,6 +209,7 @@ class Pessoa {
                     tipo_pessoa = :tipo_pessoa, 
                     nome = :nome, 
                     cpf_cnpj = :cpf_cnpj, 
+                    cpf_cnpj_limpo = :cpf_cnpj_limpo,
                     rg_ie = :rg_ie, 
                     telefone = :telefone, 
                     cep = :cep, 
@@ -213,6 +225,7 @@ class Pessoa {
             ':tipo_pessoa' => $data['tipo_pessoa'],
             ':nome'        => trim($data['nome']),
             ':cpf_cnpj'    => $rawCpfCnpj, // Atualiza mantendo a máscara
+            ':cpf_cnpj_limpo' => $cpfCnpjClean ?: null,
             ':rg_ie'       => trim($data['rg_ie'] ?? ''),
             ':telefone'    => trim($data['telefone'] ?? ''),
             ':cep'         => trim($data['cep'] ?? ''),
@@ -246,6 +259,31 @@ class Pessoa {
     public static function getById(PDO $pdo, int $id) {
         $stmt = $pdo->prepare("SELECT * FROM pessoa WHERE id_pessoa = :id LIMIT 1");
         $stmt->execute([':id' => $id]);
+        return $stmt->fetch();
+    }
+
+    /**
+     * Recupera uma pessoa pelo CPF/CNPJ normalizado, quando informado.
+     */
+    public static function getByDocumento(PDO $pdo, ?string $cpfCnpj) {
+        $cpfCnpjClean = $cpfCnpj !== null ? preg_replace('/[^0-9]/', '', $cpfCnpj) : '';
+
+        if ($cpfCnpjClean === '') {
+            return false;
+        }
+
+        $stmt = $pdo->prepare("
+            SELECT *
+            FROM pessoa
+            WHERE cpf_cnpj_limpo = :clean_doc
+               OR REPLACE(REPLACE(REPLACE(cpf_cnpj, '.', ''), '-', ''), '/', '') = :clean_legacy
+            LIMIT 1
+        ");
+        $stmt->execute([
+            ':clean_doc' => $cpfCnpjClean,
+            ':clean_legacy' => $cpfCnpjClean
+        ]);
+
         return $stmt->fetch();
     }
 }

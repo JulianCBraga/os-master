@@ -169,7 +169,7 @@ try {
         LEFT JOIN folha_pagto fp ON f.id_pessoa = fp.id_funcionario 
             AND fp.mes_referencia = :mes_fp 
             AND fp.ano_referencia = :ano_fp
-        WHERE p.status = 1
+        WHERE p.status = 1 AND f.status = 1
         GROUP BY f.id_pessoa, fp.id_folha
         ORDER BY p.nome ASC
     ";

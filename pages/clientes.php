@@ -34,7 +34,9 @@ $editId = $_GET['id'] ?? null;
 $editData = [
     'tipo_pessoa' => 'FISICA', 'nome' => '', 'cpf_cnpj' => '', 'rg_ie' => '',
     'telefone' => '', 'cep' => '', 'endereco' => '', 'numero' => '',
-    'bairro' => '', 'id_cidade' => '', 'status' => 1
+    'bairro' => '', 'id_cidade' => '', 'status' => 1,
+    'tipo_cliente' => 'PARTICULAR', 'origem' => '', 'whatsapp_autorizado' => 1,
+    'observacoes' => ''
 ];
 
 // ==========================================================================
@@ -55,7 +57,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'numero'      => trim(filter_input(INPUT_POST, 'numero', FILTER_DEFAULT)),
         'bairro'      => trim(filter_input(INPUT_POST, 'bairro', FILTER_DEFAULT)),
         'id_cidade'   => filter_input(INPUT_POST, 'id_cidade', FILTER_VALIDATE_INT),
-        'status'      => isset($_POST['status']) ? (int)$_POST['status'] : 1
+        'status'      => 1
+    ];
+
+    $clienteFields = [
+        'tipo_cliente'        => trim(filter_input(INPUT_POST, 'tipo_cliente', FILTER_DEFAULT)) ?: 'PARTICULAR',
+        'origem'              => trim(filter_input(INPUT_POST, 'origem', FILTER_DEFAULT)),
+        'whatsapp_autorizado' => isset($_POST['whatsapp_autorizado']) ? (int)$_POST['whatsapp_autorizado'] : 1,
+        'observacoes'         => trim(filter_input(INPUT_POST, 'observacoes', FILTER_DEFAULT)),
+        'status'              => isset($_POST['status']) ? (int)$_POST['status'] : 1
     ];
 
     // 1. AÇÃO: CRIAR NOVO CLIENTE
@@ -71,9 +81,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $id_pessoa = Pessoa::create($pdo, $pessoaFields);
 
                 // Insere os dados específicos na tabela herdeira 'cliente'
-                $sqlCliente = "INSERT INTO cliente (id_pessoa, data_ultima_interacao) VALUES (:id_pessoa, NULL)";
+                $sqlCliente = "INSERT INTO cliente (
+                                    id_pessoa, tipo_cliente, origem, whatsapp_autorizado, observacoes, status, data_ultima_interacao
+                                ) VALUES (
+                                    :id_pessoa, :tipo_cliente, :origem, :whatsapp_autorizado, :observacoes, :status, NULL
+                                )";
                 $stmtCliente = $pdo->prepare($sqlCliente);
-                $stmtCliente->execute([':id_pessoa' => $id_pessoa]);
+                $stmtCliente->execute([
+                    ':id_pessoa'           => $id_pessoa,
+                    ':tipo_cliente'        => $clienteFields['tipo_cliente'],
+                    ':origem'              => $clienteFields['origem'] ?: null,
+                    ':whatsapp_autorizado' => $clienteFields['whatsapp_autorizado'],
+                    ':observacoes'         => $clienteFields['observacoes'] ?: null,
+                    ':status'              => $clienteFields['status']
+                ]);
 
                 $pdo->commit();
                 $message = 'Cliente registado com sucesso!';
@@ -101,6 +122,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Atualiza a tabela base 'pessoa'
                 Pessoa::update($pdo, $editId, $pessoaFields);
 
+                $sqlClienteUpdate = "UPDATE cliente SET
+                                        tipo_cliente = :tipo_cliente,
+                                        origem = :origem,
+                                        whatsapp_autorizado = :whatsapp_autorizado,
+                                        observacoes = :observacoes,
+                                        status = :status
+                                     WHERE id_pessoa = :id_pessoa";
+                $stmtClienteUpdate = $pdo->prepare($sqlClienteUpdate);
+                $stmtClienteUpdate->execute([
+                    ':tipo_cliente'        => $clienteFields['tipo_cliente'],
+                    ':origem'              => $clienteFields['origem'] ?: null,
+                    ':whatsapp_autorizado' => $clienteFields['whatsapp_autorizado'],
+                    ':observacoes'         => $clienteFields['observacoes'] ?: null,
+                    ':status'              => $clienteFields['status'],
+                    ':id_pessoa'           => $editId
+                ]);
+
                 $pdo->commit();
                 $message = 'Dados do cliente atualizados com sucesso!';
                 $messageType = 'success';
@@ -123,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($action === 'edit' && $editId) {
     try {
         $stmtEdit = $pdo->prepare("
-            SELECT p.*, c.data_ultima_interacao 
+            SELECT p.*, c.tipo_cliente, c.origem, c.whatsapp_autorizado, c.observacoes, c.status AS status, c.data_ultima_interacao 
             FROM pessoa p 
             INNER JOIN cliente c ON p.id_pessoa = c.id_pessoa 
             WHERE p.id_pessoa = :id LIMIT 1
@@ -147,10 +185,13 @@ if ($action === 'edit' && $editId) {
 // 2. ATIVAR / INATIVAR CLIENTE (Inativação Lógica)
 if ($action === 'toggle_status' && $editId) {
     try {
-        $pessoa = Pessoa::getById($pdo, $editId);
-        if ($pessoa) {
-            $newStatus = ($pessoa['status'] == 1) ? 0 : 1;
-            Pessoa::setStatus($pdo, $editId, $newStatus);
+        $stmtClienteStatus = $pdo->prepare("SELECT status FROM cliente WHERE id_pessoa = :id LIMIT 1");
+        $stmtClienteStatus->execute([':id' => $editId]);
+        $cliente = $stmtClienteStatus->fetch();
+        if ($cliente) {
+            $newStatus = ($cliente['status'] == 1) ? 0 : 1;
+            $stmtSetCliente = $pdo->prepare("UPDATE cliente SET status = :status WHERE id_pessoa = :id");
+            $stmtSetCliente->execute([':status' => $newStatus, ':id' => $editId]);
             $message = 'Status do cliente alterado com sucesso!';
             $messageType = 'success';
         } else {
@@ -182,9 +223,10 @@ try {
 
     // Listagem Geral de Clientes (Pessoa + Cliente)
     $stmtClientes = $pdo->query("
-        SELECT p.id_pessoa, p.tipo_pessoa, p.nome, IFNULL(p.cpf_cnpj, 'Não informado') AS cpf_cnpj, p.telefone, p.status, c.data_ultima_interacao 
-        FROM pessoa p 
-        INNER JOIN cliente c ON p.id_pessoa = c.id_pessoa 
+        SELECT p.id_pessoa, p.tipo_pessoa, p.nome, IFNULL(p.cpf_cnpj, 'Não informado') AS cpf_cnpj,
+               p.telefone, c.status, c.tipo_cliente, c.origem, c.whatsapp_autorizado, c.data_ultima_interacao
+        FROM pessoa p
+        INNER JOIN cliente c ON p.id_pessoa = c.id_pessoa
         ORDER BY p.nome ASC
     ");
     $clientesList = $stmtClientes->fetchAll();
@@ -221,28 +263,35 @@ try {
             <?php if ($action === 'create' || $action === 'edit'): ?>
                 <!-- Formulário de Registo / Edição -->
                 <div class="card">
-                    <h2 class="card-title" style="<?php echo ($action === 'edit') ? 'color: var(--warning);' : ''; ?>">
-                        <?php echo ($action === 'edit') ? 'Editar Cliente' : 'Novo Cliente'; ?>
-                    </h2>
+                    <div class="module-header">
+                        <div>
+                            <h2 class="module-title" style="<?php echo ($action === 'edit') ? 'color: var(--warning);' : ''; ?>">
+                                <?php echo ($action === 'edit') ? 'Editar Cliente' : 'Novo Cliente'; ?>
+                            </h2>
+                            <p class="module-subtitle">Dados cadastrais, perfil comercial e endereço para abertura de OS.</p>
+                        </div>
+                        <a href="index.php?page=clientes" class="btn btn-secondary">Voltar</a>
+                    </div>
                     
                     <form id="formCliente" action="index.php?page=clientes<?php echo ($action === 'edit') ? '&action=edit&id=' . $editId : ''; ?>" method="POST" autocomplete="off">
                         <input type="hidden" name="form_action" value="<?php echo ($action === 'edit') ? 'update' : 'create'; ?>">
 
-                        <div style="display: flex; gap: 24px; margin-bottom: 24px; background-color: rgba(255,255,255,0.02); padding: 16px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+                        <div class="choice-row">
                             <span class="form-label" style="margin-bottom: 0; align-self: center;">Tipo de Cliente:</span>
-                            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600;">
-                                <input type="radio" name="tipo_pessoa" value="FISICA" <?php echo ($editData['tipo_pessoa'] === 'FISICA') ? 'checked' : ''; ?> style="width: 18px; height: 18px;">
+                            <label class="choice-option">
+                                <input type="radio" name="tipo_pessoa" value="FISICA" <?php echo ($editData['tipo_pessoa'] === 'FISICA') ? 'checked' : ''; ?>>
                                 Pessoa Física (CPF)
                             </label>
-                            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600;">
-                                <input type="radio" name="tipo_pessoa" value="JURIDICA" <?php echo ($editData['tipo_pessoa'] === 'JURIDICA') ? 'checked' : ''; ?> style="width: 18px; height: 18px;">
+                            <label class="choice-option">
+                                <input type="radio" name="tipo_pessoa" value="JURIDICA" <?php echo ($editData['tipo_pessoa'] === 'JURIDICA') ? 'checked' : ''; ?>>
                                 Pessoa Jurídica (CNPJ)
                             </label>
                         </div>
 
-                        <h3 style="font-size: 14px; text-transform: uppercase; color: var(--primary); margin-bottom: 16px;">1. Dados de Identificação</h3>
+                        <div class="form-section">
+                        <h3 class="form-section-title">1. Dados de Identificação</h3>
                         
-                        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 20px;">
+                        <div class="form-grid form-grid-wide">
                             <div class="form-group">
                                 <label id="lbl_nome" for="nome" class="form-label">Nome Completo</label>
                                 <input type="text" id="nome" name="nome" class="form-control" value="<?php echo htmlspecialchars($editData['nome']); ?>" required>
@@ -257,7 +306,7 @@ try {
                             </div>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div class="form-grid form-grid-2">
                             <div class="form-group">
                                 <label for="telefone" class="form-label">Contacto Telefónico</label>
                                 <input type="text" id="telefone" name="telefone" class="form-control" placeholder="(67) 99999-9999" value="<?php echo htmlspecialchars($editData['telefone']); ?>" maxlength="15">
@@ -271,9 +320,44 @@ try {
                             </div>
                         </div>
 
-                        <h3 style="font-size: 14px; text-transform: uppercase; color: var(--primary); margin-top: 20px; margin-bottom: 16px;">2. Localização e Morada</h3>
+                        </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 20px;">
+                        <div class="form-section">
+                        <h3 class="form-section-title">2. Perfil Comercial</h3>
+
+                        <div class="form-grid form-grid-3">
+                            <div class="form-group">
+                                <label for="tipo_cliente" class="form-label">Tipo de Cliente</label>
+                                <select id="tipo_cliente" name="tipo_cliente" class="form-control">
+                                    <option value="PARTICULAR" <?php echo ($editData['tipo_cliente'] === 'PARTICULAR') ? 'selected' : ''; ?>>Particular</option>
+                                    <option value="EMPRESA" <?php echo ($editData['tipo_cliente'] === 'EMPRESA') ? 'selected' : ''; ?>>Empresa</option>
+                                    <option value="REVENDA" <?php echo ($editData['tipo_cliente'] === 'REVENDA') ? 'selected' : ''; ?>>Revenda</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="origem" class="form-label">Origem</label>
+                                <input type="text" id="origem" name="origem" class="form-control" placeholder="Ex: WhatsApp, indicação, balcão" value="<?php echo htmlspecialchars($editData['origem']); ?>">
+                            </div>
+                            <div class="form-group">
+                                <label for="whatsapp_autorizado" class="form-label">Contato por WhatsApp</label>
+                                <select id="whatsapp_autorizado" name="whatsapp_autorizado" class="form-control">
+                                    <option value="1" <?php echo ($editData['whatsapp_autorizado'] == 1) ? 'selected' : ''; ?>>Autorizado</option>
+                                    <option value="0" <?php echo ($editData['whatsapp_autorizado'] == 0) ? 'selected' : ''; ?>>Não autorizado</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="observacoes" class="form-label">Observações do Cliente</label>
+                            <textarea id="observacoes" name="observacoes" class="form-control" rows="3" placeholder="Preferências, restrições de contato, detalhes comerciais..."><?php echo htmlspecialchars($editData['observacoes']); ?></textarea>
+                        </div>
+
+                        </div>
+
+                        <div class="form-section">
+                        <h3 class="form-section-title">3. Localização e Morada</h3>
+
+                        <div class="form-grid address-grid">
                             <div class="form-group">
                                 <label for="cep" class="form-label">Código Postal (CEP)</label>
                                 <input type="text" id="cep" name="cep" class="form-control" placeholder="79800-000" value="<?php echo htmlspecialchars($editData['cep']); ?>" maxlength="9">
@@ -288,7 +372,7 @@ try {
                             </div>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div class="form-grid form-grid-2">
                             <div class="form-group">
                                 <label for="bairro" class="form-label">Bairro / Freguesia</label>
                                 <input type="text" id="bairro" name="bairro" class="form-control" value="<?php echo htmlspecialchars($editData['bairro']); ?>">
@@ -304,6 +388,8 @@ try {
                                     <?php endforeach; ?>
                                 </select>
                             </div>
+                        </div>
+
                         </div>
 
                         <div style="display: flex; gap: 12px; margin-top: 32px; justify-content: flex-end;">
@@ -562,8 +648,11 @@ try {
                 
                 <!-- Ecrã Padrão: Listagem Geral de Clientes -->
                 <div class="card">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                        <h2 class="card-title" style="margin-bottom: 0;">Clientes Registados</h2>
+                    <div class="module-header">
+                        <div>
+                            <h2 class="module-title">Clientes Registados</h2>
+                            <p class="module-subtitle"><?php echo count($clientesList); ?> cliente(s) no cadastro.</p>
+                        </div>
                         <a href="index.php?page=clientes&action=create" class="btn btn-primary">
                             Registar Novo Cliente
                         </a>
@@ -581,6 +670,7 @@ try {
                                         <th>Tipo</th>
                                         <th>CPF / CNPJ</th>
                                         <th>Telefone</th>
+                                        <th>Perfil</th>
                                         <th>Status</th>
                                         <th style="width: 200px; text-align: right;">Ações</th>
                                     </tr>
@@ -588,8 +678,11 @@ try {
                                 <tbody>
                                     <?php foreach ($clientesList as $cli): ?>
                                         <tr style="<?php echo ($cli['status'] == 0) ? 'opacity: 0.6;' : ''; ?>">
-                                            <td><?php echo $cli['id_pessoa']; ?></td>
-                                            <td><strong><?php echo htmlspecialchars($cli['nome']); ?></strong></td>
+                                            <td><code>#<?php echo $cli['id_pessoa']; ?></code></td>
+                                            <td>
+                                                <div class="table-primary-text"><?php echo htmlspecialchars($cli['nome']); ?></div>
+                                                <div class="table-muted-text"><?php echo htmlspecialchars($cli['origem'] ?: 'Origem não informada'); ?></div>
+                                            </td>
                                             <td>
                                                 <span class="badge" style="background-color: var(--info-bg); color: var(--info);">
                                                     <?php echo ($cli['tipo_pessoa'] === 'FISICA') ? 'Física' : 'Jurídica'; ?>
@@ -598,6 +691,11 @@ try {
                                             <td><code><?php echo htmlspecialchars($cli['cpf_cnpj']); ?></code></td>
                                             <td><?php echo htmlspecialchars($cli['telefone'] !== '' ? $cli['telefone'] : 'Não informado'); ?></td>
                                             <td>
+                                                <span class="badge" style="background-color: var(--warning-bg); color: var(--warning);">
+                                                    <?php echo htmlspecialchars(ucfirst(strtolower($cli['tipo_cliente']))); ?>
+                                                </span>
+                                            </td>
+                                            <td>
                                                 <?php if ($cli['status'] == 1): ?>
                                                     <span class="badge badge-finalizada">Ativo</span>
                                                 <?php else: ?>
@@ -605,6 +703,7 @@ try {
                                                 <?php endif; ?>
                                             </td>
                                             <td style="text-align: right;">
+                                                <div class="action-group">
                                                 <a href="index.php?page=clientes&action=edit&id=<?php echo $cli['id_pessoa']; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px;">
                                                     Editar
                                                 </a>
@@ -624,6 +723,7 @@ try {
                                                         Ativar
                                                     </button>
                                                 <?php endif; ?>
+                                                </div>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>

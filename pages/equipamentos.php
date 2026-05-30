@@ -172,16 +172,17 @@ try {
         SELECT p.id_pessoa, p.nome, p.cpf_cnpj 
         FROM cliente c 
         INNER JOIN pessoa p ON c.id_pessoa = p.id_pessoa 
-        WHERE p.status = 1 
+        WHERE p.status = 1 AND c.status = 1
         ORDER BY p.nome ASC
     ";
     $clientesList = $pdo->query($sqlClientes)->fetchAll();
 
     // 2. Lista Geral de Equipamentos com junção na tabela Pessoa para exibir o nome do dono
     $sqlEquipamentos = "
-        SELECT e.*, p.nome AS cliente_nome, p.status AS cliente_status 
+        SELECT e.*, p.nome AS cliente_nome, c.status AS cliente_status
         FROM equipamento e 
-        INNER JOIN pessoa p ON e.id_cliente = p.id_pessoa 
+        INNER JOIN pessoa p ON e.id_cliente = p.id_pessoa
+        INNER JOIN cliente c ON e.id_cliente = c.id_pessoa
         ORDER BY e.aparelho ASC
     ";
     $equipamentosList = $pdo->query($sqlEquipamentos)->fetchAll();
