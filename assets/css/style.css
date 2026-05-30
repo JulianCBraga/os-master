@@ -522,6 +522,13 @@ html[data-theme="light"] .main-content {
     align-items: start;
 }
 
+.equipment-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 32px;
+    align-items: start;
+}
+
 /* Botões Modernos */
 .btn {
     display: inline-flex;
@@ -778,6 +785,11 @@ code {
     }
 
     .users-layout {
+        grid-template-columns: 1fr;
+        gap: 18px;
+    }
+
+    .equipment-layout {
         grid-template-columns: 1fr;
         gap: 18px;
     }

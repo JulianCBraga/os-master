@@ -110,6 +110,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['ajax_action'])) {
         }
 
         try {
+            $pdo->beginTransaction();
+
             $sqlInsert = "INSERT INTO equipamento (aparelho, marca, modelo, numero_serie, id_cliente) 
                           VALUES (:aparelho, :marca, :modelo, :numero_serie, :id_cliente)";
             $stmt = $pdo->prepare($sqlInsert);
@@ -122,6 +124,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['ajax_action'])) {
             ]);
             $id_eq = $pdo->lastInsertId();
 
+            $stmtProp = $pdo->prepare("
+                INSERT INTO equipamento_proprietario (id_equipamento, id_cliente, data_inicio, observacao)
+                VALUES (:id_equipamento, :id_cliente, NOW(), 'Cadastro rápido pela OS')
+            ");
+            $stmtProp->execute([
+                ':id_equipamento' => $id_eq,
+                ':id_cliente' => $id_cliente
+            ]);
+
+            $pdo->commit();
+
             echo json_encode([
                 'success'  => true,
                 'id'       => $id_eq,
@@ -132,7 +145,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['ajax_action'])) {
             ]);
             exit;
         } catch (PDOException $e) {
-            echo json_encode(['success' => false, 'error' => 'Erro interno ao tentar registar o equipamento.']);
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            echo json_encode(['success' => false, 'error' => 'Erro interno ao tentar cadastrar o equipamento.']);
             exit;
         }
     }
@@ -255,6 +271,17 @@ $editData = [
     'status'                  => 'aguardando_analise'
 ];
 $osItems = []; // Itens / peças associadas à OS em edição
+
+$preselectCliente = filter_input(INPUT_GET, 'id_cliente', FILTER_VALIDATE_INT);
+$preselectEquipamento = filter_input(INPUT_GET, 'id_equipamento', FILTER_VALIDATE_INT);
+if ($action === 'create') {
+    if ($preselectCliente) {
+        $editData['id_cliente'] = $preselectCliente;
+    }
+    if ($preselectEquipamento) {
+        $editData['id_equipamento'] = $preselectEquipamento;
+    }
+}
 
 // ==========================================================================
 // Processamento de Ações do Formulário (POST)
@@ -642,6 +669,7 @@ try {
                                         <select id="id_equipamento" name="id_equipamento" class="form-control" required disabled style="flex-grow: 1;">
                                             <option value="">Selecione o cliente primeiro...</option>
                                         </select>
+                                        <a href="#" id="btn-escolher-equipamento" class="btn btn-secondary" style="padding: 10px 14px; font-weight: 700; font-size: 13px; white-space: nowrap; pointer-events: none; opacity: 0.55;" title="Selecionar ou cadastrar equipamento no módulo principal">Abrir</a>
                                         <button type="button" id="btn-open-modal-equipamento" class="btn btn-secondary" style="padding: 10px 14px; font-weight: 700; font-size: 16px;" title="Registrar Equipamento Rápido" disabled>+</button>
                                     </div>
                                 </div>
@@ -898,6 +926,7 @@ try {
                 const selectCliente = document.getElementById('id_cliente');
                 const selectEquipamento = document.getElementById('id_equipamento');
                 const btnAddEquipamento = document.getElementById('btn-open-modal-equipamento');
+                const btnEscolherEquipamento = document.getElementById('btn-escolher-equipamento');
                 
                 // Arrays predefinidos de equipamentos vindos do PHP
                 let equipamentos = <?php echo json_encode($equipamentosList); ?>;
@@ -911,6 +940,11 @@ try {
                     if (clienteId === '') {
                         selectEquipamento.disabled = true;
                         btnAddEquipamento.disabled = true;
+                        if (btnEscolherEquipamento) {
+                            btnEscolherEquipamento.href = '#';
+                            btnEscolherEquipamento.style.pointerEvents = 'none';
+                            btnEscolherEquipamento.style.opacity = '0.55';
+                        }
                         return;
                     }
 
@@ -932,6 +966,11 @@ try {
                         selectEquipamento.disabled = false;
                     }
                     btnAddEquipamento.disabled = false; // Habilita o botão "+" de equipamento já que temos cliente selecionado
+                    if (btnEscolherEquipamento) {
+                        btnEscolherEquipamento.href = `index.php?page=equipamentos&return=os&action=create&id_cliente=${encodeURIComponent(clienteId)}`;
+                        btnEscolherEquipamento.style.pointerEvents = '';
+                        btnEscolherEquipamento.style.opacity = '';
+                    }
                 }
 
                 if (selectCliente) {

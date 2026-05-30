@@ -36,6 +36,8 @@ $editData = [
     'telefone' => '', 'cep' => '', 'endereco' => '', 'numero' => '',
     'bairro' => '', 'id_cidade' => '', 'status' => 1,
     'tipo_cliente' => 'PARTICULAR', 'origem' => '', 'whatsapp_autorizado' => 1,
+    'contato_servico_nome' => '', 'contato_servico_whatsapp' => '',
+    'contato_financeiro_nome' => '', 'contato_financeiro_whatsapp' => '',
     'observacoes' => ''
 ];
 
@@ -64,9 +66,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'tipo_cliente'        => trim(filter_input(INPUT_POST, 'tipo_cliente', FILTER_DEFAULT)) ?: 'PARTICULAR',
         'origem'              => trim(filter_input(INPUT_POST, 'origem', FILTER_DEFAULT)),
         'whatsapp_autorizado' => isset($_POST['whatsapp_autorizado']) ? (int)$_POST['whatsapp_autorizado'] : 1,
+        'contato_servico_nome' => trim(filter_input(INPUT_POST, 'contato_servico_nome', FILTER_DEFAULT)),
+        'contato_servico_whatsapp' => trim(filter_input(INPUT_POST, 'contato_servico_whatsapp', FILTER_DEFAULT)),
+        'contato_financeiro_nome' => trim(filter_input(INPUT_POST, 'contato_financeiro_nome', FILTER_DEFAULT)),
+        'contato_financeiro_whatsapp' => trim(filter_input(INPUT_POST, 'contato_financeiro_whatsapp', FILTER_DEFAULT)),
         'observacoes'         => trim(filter_input(INPUT_POST, 'observacoes', FILTER_DEFAULT)),
         'status'              => isset($_POST['status']) ? (int)$_POST['status'] : 1
     ];
+
+    if ($pessoaFields['tipo_pessoa'] === 'FISICA') {
+        $clienteFields['contato_servico_nome'] = '';
+        $clienteFields['contato_servico_whatsapp'] = '';
+        $clienteFields['contato_financeiro_nome'] = '';
+        $clienteFields['contato_financeiro_whatsapp'] = '';
+    }
 
     // 1. AÇÃO: CRIAR NOVO CLIENTE
     if ($formAction === 'create') {
@@ -82,9 +95,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 // Insere os dados específicos na tabela herdeira 'cliente'
                 $sqlCliente = "INSERT INTO cliente (
-                                    id_pessoa, tipo_cliente, origem, whatsapp_autorizado, observacoes, status, data_ultima_interacao
+                                    id_pessoa, tipo_cliente, origem, whatsapp_autorizado,
+                                    contato_servico_nome, contato_servico_whatsapp,
+                                    contato_financeiro_nome, contato_financeiro_whatsapp,
+                                    observacoes, status, data_ultima_interacao
                                 ) VALUES (
-                                    :id_pessoa, :tipo_cliente, :origem, :whatsapp_autorizado, :observacoes, :status, NULL
+                                    :id_pessoa, :tipo_cliente, :origem, :whatsapp_autorizado,
+                                    :contato_servico_nome, :contato_servico_whatsapp,
+                                    :contato_financeiro_nome, :contato_financeiro_whatsapp,
+                                    :observacoes, :status, NULL
                                 )";
                 $stmtCliente = $pdo->prepare($sqlCliente);
                 $stmtCliente->execute([
@@ -92,6 +111,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':tipo_cliente'        => $clienteFields['tipo_cliente'],
                     ':origem'              => $clienteFields['origem'] ?: null,
                     ':whatsapp_autorizado' => $clienteFields['whatsapp_autorizado'],
+                    ':contato_servico_nome' => $clienteFields['contato_servico_nome'] ?: null,
+                    ':contato_servico_whatsapp' => $clienteFields['contato_servico_whatsapp'] ?: null,
+                    ':contato_financeiro_nome' => $clienteFields['contato_financeiro_nome'] ?: null,
+                    ':contato_financeiro_whatsapp' => $clienteFields['contato_financeiro_whatsapp'] ?: null,
                     ':observacoes'         => $clienteFields['observacoes'] ?: null,
                     ':status'              => $clienteFields['status']
                 ]);
@@ -126,6 +149,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         tipo_cliente = :tipo_cliente,
                                         origem = :origem,
                                         whatsapp_autorizado = :whatsapp_autorizado,
+                                        contato_servico_nome = :contato_servico_nome,
+                                        contato_servico_whatsapp = :contato_servico_whatsapp,
+                                        contato_financeiro_nome = :contato_financeiro_nome,
+                                        contato_financeiro_whatsapp = :contato_financeiro_whatsapp,
                                         observacoes = :observacoes,
                                         status = :status
                                      WHERE id_pessoa = :id_pessoa";
@@ -134,6 +161,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':tipo_cliente'        => $clienteFields['tipo_cliente'],
                     ':origem'              => $clienteFields['origem'] ?: null,
                     ':whatsapp_autorizado' => $clienteFields['whatsapp_autorizado'],
+                    ':contato_servico_nome' => $clienteFields['contato_servico_nome'] ?: null,
+                    ':contato_servico_whatsapp' => $clienteFields['contato_servico_whatsapp'] ?: null,
+                    ':contato_financeiro_nome' => $clienteFields['contato_financeiro_nome'] ?: null,
+                    ':contato_financeiro_whatsapp' => $clienteFields['contato_financeiro_whatsapp'] ?: null,
                     ':observacoes'         => $clienteFields['observacoes'] ?: null,
                     ':status'              => $clienteFields['status'],
                     ':id_pessoa'           => $editId
@@ -161,7 +192,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($action === 'edit' && $editId) {
     try {
         $stmtEdit = $pdo->prepare("
-            SELECT p.*, c.tipo_cliente, c.origem, c.whatsapp_autorizado, c.observacoes, c.status AS status, c.data_ultima_interacao 
+            SELECT p.*, c.tipo_cliente, c.origem, c.whatsapp_autorizado,
+                   c.contato_servico_nome, c.contato_servico_whatsapp,
+                   c.contato_financeiro_nome, c.contato_financeiro_whatsapp,
+                   c.observacoes, c.status AS status, c.data_ultima_interacao 
             FROM pessoa p 
             INNER JOIN cliente c ON p.id_pessoa = c.id_pessoa 
             WHERE p.id_pessoa = :id LIMIT 1
@@ -224,7 +258,10 @@ try {
     // Listagem Geral de Clientes (Pessoa + Cliente)
     $stmtClientes = $pdo->query("
         SELECT p.id_pessoa, p.tipo_pessoa, p.nome, IFNULL(p.cpf_cnpj, 'Não informado') AS cpf_cnpj,
-               p.telefone, c.status, c.tipo_cliente, c.origem, c.whatsapp_autorizado, c.data_ultima_interacao
+               p.telefone, c.status, c.tipo_cliente, c.origem, c.whatsapp_autorizado,
+               c.contato_servico_nome, c.contato_servico_whatsapp,
+               c.contato_financeiro_nome, c.contato_financeiro_whatsapp,
+               c.data_ultima_interacao
         FROM pessoa p
         INNER JOIN cliente c ON p.id_pessoa = c.id_pessoa
         ORDER BY p.nome ASC
@@ -354,8 +391,35 @@ try {
 
                         </div>
 
+                        <div class="form-section" id="contatos_juridicos">
+                        <h3 class="form-section-title">3. Contatos da Empresa</h3>
+
+                        <div class="form-grid form-grid-2">
+                            <div class="form-group">
+                                <label for="contato_servico_nome" class="form-label">Contato do Serviço</label>
+                                <input type="text" id="contato_servico_nome" name="contato_servico_nome" class="form-control" placeholder="Quem traz ou acompanha o equipamento" value="<?php echo htmlspecialchars($editData['contato_servico_nome']); ?>">
+                            </div>
+                            <div class="form-group">
+                                <label for="contato_servico_whatsapp" class="form-label">WhatsApp do Serviço</label>
+                                <input type="text" id="contato_servico_whatsapp" name="contato_servico_whatsapp" class="form-control" placeholder="(67) 99999-9999" value="<?php echo htmlspecialchars($editData['contato_servico_whatsapp']); ?>" maxlength="15">
+                            </div>
+                        </div>
+
+                        <div class="form-grid form-grid-2">
+                            <div class="form-group">
+                                <label for="contato_financeiro_nome" class="form-label">Contato Financeiro</label>
+                                <input type="text" id="contato_financeiro_nome" name="contato_financeiro_nome" class="form-control" placeholder="Quem autoriza ou realiza pagamento" value="<?php echo htmlspecialchars($editData['contato_financeiro_nome']); ?>">
+                            </div>
+                            <div class="form-group">
+                                <label for="contato_financeiro_whatsapp" class="form-label">WhatsApp Financeiro</label>
+                                <input type="text" id="contato_financeiro_whatsapp" name="contato_financeiro_whatsapp" class="form-control" placeholder="(67) 99999-9999" value="<?php echo htmlspecialchars($editData['contato_financeiro_whatsapp']); ?>" maxlength="15">
+                            </div>
+                        </div>
+
+                        </div>
+
                         <div class="form-section">
-                        <h3 class="form-section-title">3. Localização e Morada</h3>
+                        <h3 class="form-section-title">4. Localização e Endereço</h3>
 
                         <div class="form-grid address-grid">
                             <div class="form-group">
@@ -406,6 +470,9 @@ try {
                     const cpfCnpjInput = document.getElementById('cpf_cnpj');
                     const rgIeInput = document.getElementById('rg_ie');
                     const telInput = document.getElementById('telefone');
+                    const contatoServicoWhatsAppInput = document.getElementById('contato_servico_whatsapp');
+                    const contatoFinanceiroWhatsAppInput = document.getElementById('contato_financeiro_whatsapp');
+                    const contatosJuridicos = document.getElementById('contatos_juridicos');
                     const cepInput = document.getElementById('cep');
                     
                     // Seletores de rótulo para alteração dinâmica de Tipo de Pessoa
@@ -421,11 +488,17 @@ try {
                             lblCpfCnpj.textContent = 'CPF (Opcional)';
                             cpfCnpjInput.placeholder = '000.000.000-00';
                             lblRgIe.textContent = 'RG';
+                            if (contatosJuridicos) {
+                                contatosJuridicos.style.display = 'none';
+                            }
                         } else {
                             lblNome.textContent = 'Razão Social';
                             lblCpfCnpj.textContent = 'CNPJ (Opcional)';
                             cpfCnpjInput.placeholder = '00.000.000/0001-00';
                             lblRgIe.textContent = 'Inscrição Estadual (IE)';
+                            if (contatosJuridicos) {
+                                contatosJuridicos.style.display = '';
+                            }
                         }
 
                         if (limparDocumento) {
@@ -509,22 +582,28 @@ try {
                         });
                     }
 
-                    if (telInput) {
-                        telInput.addEventListener('input', function() {
-                            let v = this.value.replace(/\D/g, '');
-                            if (v.length > 11) v = v.slice(0, 11);
-                            if (v.length > 10) {
-                                v = v.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3');
-                            } else if (v.length > 5) {
-                                v = v.replace(/^(\d{2})(\d{4})(\d{4})$/, '($1) $2-$3');
-                            } else if (v.length > 2) {
-                                v = v.replace(/^(\d{2})(\d*)$/, '($1) $2');
-                            } else {
-                                v = v.replace(/^(\d*)$/, '($1');
-                            }
-                            this.value = v;
-                        });
+                    function formatarTelefone(valor) {
+                        let v = valor.replace(/\D/g, '');
+                        if (v.length > 11) v = v.slice(0, 11);
+                        if (v.length > 10) {
+                            return v.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3');
+                        }
+                        if (v.length > 5) {
+                            return v.replace(/^(\d{2})(\d{4})(\d{4})$/, '($1) $2-$3');
+                        }
+                        if (v.length > 2) {
+                            return v.replace(/^(\d{2})(\d*)$/, '($1) $2');
+                        }
+                        return v.replace(/^(\d*)$/, '($1');
                     }
+
+                    [telInput, contatoServicoWhatsAppInput, contatoFinanceiroWhatsAppInput].forEach(input => {
+                        if (input) {
+                            input.addEventListener('input', function() {
+                                this.value = formatarTelefone(this.value);
+                            });
+                        }
+                    });
 
                     if (cepInput) {
                         cepInput.addEventListener('input', function() {
@@ -681,7 +760,16 @@ try {
                                             <td><code>#<?php echo $cli['id_pessoa']; ?></code></td>
                                             <td>
                                                 <div class="table-primary-text"><?php echo htmlspecialchars($cli['nome']); ?></div>
-                                                <div class="table-muted-text"><?php echo htmlspecialchars($cli['origem'] ?: 'Origem não informada'); ?></div>
+                                                <?php if ($cli['tipo_pessoa'] === 'JURIDICA' && !empty($cli['contato_servico_nome'])): ?>
+                                                    <div class="table-muted-text">
+                                                        Serviço: <?php echo htmlspecialchars($cli['contato_servico_nome']); ?>
+                                                        <?php if (!empty($cli['contato_servico_whatsapp'])): ?>
+                                                            - <?php echo htmlspecialchars($cli['contato_servico_whatsapp']); ?>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <div class="table-muted-text"><?php echo htmlspecialchars($cli['origem'] ?: 'Origem não informada'); ?></div>
+                                                <?php endif; ?>
                                             </td>
                                             <td>
                                                 <span class="badge" style="background-color: var(--info-bg); color: var(--info);">

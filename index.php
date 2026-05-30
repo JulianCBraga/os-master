@@ -98,7 +98,7 @@ $pageFile = $isAllowedPage ? PAGES_PATH . '/' . $page . '.php' : null;
             document.documentElement.dataset.theme = savedTheme || (prefersLight ? 'light' : 'dark');
         })();
     </script>
-    <link rel="stylesheet" href="assets/css/style.css?v=4">
+    <link rel="stylesheet" href="assets/css/style.css?v=5">
 </head>
 <body>
     <div id="app">

@@ -51,6 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             "DROP TABLE IF EXISTS `historico_os`;",
             "DROP TABLE IF EXISTS `folha_pagto`;",
             "DROP TABLE IF EXISTS `os`;",
+            "DROP TABLE IF EXISTS `equipamento_proprietario`;",
             "DROP TABLE IF EXISTS `equipamento`;",
             "DROP TABLE IF EXISTS `cliente`;",
             "DROP TABLE IF EXISTS `funcionario`;",
@@ -106,6 +107,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               `tipo_cliente` enum('PARTICULAR','EMPRESA','REVENDA') DEFAULT 'PARTICULAR',
               `origem` varchar(50) DEFAULT NULL,
               `whatsapp_autorizado` tinyint(1) DEFAULT 1,
+              `contato_servico_nome` varchar(120) DEFAULT NULL,
+              `contato_servico_whatsapp` varchar(20) DEFAULT NULL,
+              `contato_financeiro_nome` varchar(120) DEFAULT NULL,
+              `contato_financeiro_whatsapp` varchar(20) DEFAULT NULL,
               `observacoes` text DEFAULT NULL,
               `status` tinyint(1) DEFAULT 1,
               `data_ultima_interacao` datetime DEFAULT NULL,
@@ -135,9 +140,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               `marca` varchar(50) DEFAULT NULL,
               `modelo` varchar(50) DEFAULT NULL,
               `numero_serie` varchar(100) DEFAULT NULL,
+              `cor` varchar(40) DEFAULT NULL,
+              `patrimonio` varchar(60) DEFAULT NULL,
+              `observacoes` text DEFAULT NULL,
               `id_cliente` int(11) NOT NULL,
               PRIMARY KEY (`id_equipamento`),
               KEY `fk_equipamento_cliente` (`id_cliente`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
+
+            // Tabela: equipamento_proprietario
+            "CREATE TABLE `equipamento_proprietario` (
+              `id_historico` int(11) NOT NULL AUTO_INCREMENT,
+              `id_equipamento` int(11) NOT NULL,
+              `id_cliente` int(11) NOT NULL,
+              `data_inicio` datetime NOT NULL DEFAULT current_timestamp(),
+              `data_fim` datetime DEFAULT NULL,
+              `observacao` varchar(255) DEFAULT NULL,
+              PRIMARY KEY (`id_historico`),
+              KEY `fk_equipamento_prop_equipamento` (`id_equipamento`),
+              KEY `fk_equipamento_prop_cliente` (`id_cliente`),
+              KEY `idx_equipamento_prop_atual` (`id_equipamento`, `data_fim`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
             
             // Tabela: funcionario
@@ -245,6 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             "ALTER TABLE `cidade` ADD CONSTRAINT `fk_cidade_estado` FOREIGN KEY (`id_estado`) REFERENCES `estado` (`id_estado`);",
             "ALTER TABLE `cliente` ADD CONSTRAINT `fk_cliente_pessoa` FOREIGN KEY (`id_pessoa`) REFERENCES `pessoa` (`id_pessoa`) ON DELETE CASCADE;",
             "ALTER TABLE `equipamento` ADD CONSTRAINT `fk_equipamento_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `cliente` (`id_pessoa`);",
+            "ALTER TABLE `equipamento_proprietario` ADD CONSTRAINT `fk_equipamento_prop_equipamento` FOREIGN KEY (`id_equipamento`) REFERENCES `equipamento` (`id_equipamento`) ON DELETE CASCADE, ADD CONSTRAINT `fk_equipamento_prop_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `cliente` (`id_pessoa`);",
             "ALTER TABLE `folha_pagto` ADD CONSTRAINT `fk_folha_funcionario` FOREIGN KEY (`id_funcionario`) REFERENCES `funcionario` (`id_pessoa`);",
             "ALTER TABLE `funcionario` ADD CONSTRAINT `fk_funcionario_pessoa` FOREIGN KEY (`id_pessoa`) REFERENCES `pessoa` (`id_pessoa`) ON DELETE CASCADE;",
             "ALTER TABLE `historico_os` ADD CONSTRAINT `fk_historico_os` FOREIGN KEY (`id_os`) REFERENCES `os` (`id_os`) ON DELETE CASCADE;",
@@ -321,8 +344,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // 4.4. Cliente Padrão vinculado ao administrador
         $stmtClienteAdmin = $pdoInit->prepare("INSERT INTO `cliente`
-            (`id_pessoa`, `tipo_cliente`, `origem`, `whatsapp_autorizado`, `status`, `data_ultima_interacao`)
-            VALUES (1, 'PARTICULAR', 'Instalação inicial', 1, 1, NULL)
+            (`id_pessoa`, `tipo_cliente`, `origem`, `whatsapp_autorizado`, `contato_servico_nome`, `contato_servico_whatsapp`, `contato_financeiro_nome`, `contato_financeiro_whatsapp`, `status`, `data_ultima_interacao`)
+            VALUES (1, 'PARTICULAR', 'Instalação inicial', 1, NULL, NULL, NULL, NULL, 1, NULL)
             ON DUPLICATE KEY UPDATE `id_pessoa`=1;");
         $stmtClienteAdmin->execute();
 
