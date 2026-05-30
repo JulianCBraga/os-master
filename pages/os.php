@@ -4,7 +4,6 @@
  * * Este ficheiro implementa a lógica Mestre-Detalhe completa para gerir OS,
  * permitir associar clientes, equipamentos, técnicos, lançar peças em tempo real
  * com cálculo de totais automatizado e gerir o histórico de modificações.
- * Incorpora janelas modais assíncronas (AJAX) para cadastros rápidos de Clientes e Equipamentos.
  * * @package OSMaster
  * @author Julian C. Braga
  * @version 1.4
@@ -20,138 +19,6 @@ if (!defined('BASE_PATH')) {
 if (!isset($_SESSION['user_id'])) {
     header("Location: index.php?page=login");
     exit;
-}
-
-// Carrega a classe de controlo base Pessoa necessária para validações assíncronas
-require_once BASE_PATH . '/classes/Pessoa.php';
-
-// ==========================================================================
-// CONTROLADOR DE REQUISIÇÕES ASSÍNCRONAS (AJAX / Fetch API)
-// ==========================================================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['ajax_action'])) {
-    // Descartamos todo o lixo HTML do buffer de saída acumulado pelo index.php
-    while (ob_get_level() > 0) {
-        ob_end_clean();
-    }
-    header('Content-Type: application/json');
-    $ajaxAction = $_GET['ajax_action'];
-
-    // 1. AJAX: Criar Cliente Rápido (Com todos os campos requisitados)
-    if ($ajaxAction === 'create_cliente') {
-        $tipo_pessoa = trim(filter_input(INPUT_POST, 'modal_tipo_pessoa', FILTER_DEFAULT)) ?: 'FISICA';
-        $nome        = trim(filter_input(INPUT_POST, 'modal_nome', FILTER_DEFAULT));
-        $cpf_cnpj    = trim(filter_input(INPUT_POST, 'modal_cpf_cnpj', FILTER_DEFAULT));
-        $rg_ie       = trim(filter_input(INPUT_POST, 'modal_rg_ie', FILTER_DEFAULT));
-        $telefone    = trim(filter_input(INPUT_POST, 'modal_telefone', FILTER_DEFAULT));
-        $cep         = trim(filter_input(INPUT_POST, 'modal_cep', FILTER_DEFAULT));
-        $endereco    = trim(filter_input(INPUT_POST, 'modal_endereco', FILTER_DEFAULT));
-        $numero      = trim(filter_input(INPUT_POST, 'modal_numero', FILTER_DEFAULT));
-        $bairro      = trim(filter_input(INPUT_POST, 'modal_bairro', FILTER_DEFAULT));
-        $id_cidade   = filter_input(INPUT_POST, 'modal_id_cidade', FILTER_VALIDATE_INT);
-
-        if (empty($nome) || !$id_cidade) {
-            echo json_encode(['success' => false, 'error' => 'Nome e Cidade são de preenchimento obrigatório.']);
-            exit;
-        }
-
-        try {
-            $pdo->beginTransaction();
-
-            $pessoaData = [
-                'tipo_pessoa' => $tipo_pessoa,
-                'nome'        => $nome,
-                'cpf_cnpj'    => $cpf_cnpj,
-                'rg_ie'       => $rg_ie,
-                'telefone'    => $telefone,
-                'cep'         => $cep,
-                'endereco'    => $endereco,
-                'numero'      => $numero,
-                'bairro'      => $bairro,
-                'id_cidade'   => $id_cidade,
-                'status'      => 1
-            ];
-
-            // Executa a persistência utilizando as regras estruturais e de herança da classe Pessoa
-            $id_pessoa = Pessoa::create($pdo, $pessoaData);
-
-            // Insere na tabela dependente 'cliente'
-            $sqlCliente = "INSERT INTO cliente (id_pessoa, tipo_cliente, origem, whatsapp_autorizado, status, data_ultima_interacao)
-                           VALUES (:id_pessoa, 'PARTICULAR', 'OS rápida', 1, 1, NULL)";
-            $pdo->prepare($sqlCliente)->execute([':id_pessoa' => $id_pessoa]);
-
-            $pdo->commit();
-            echo json_encode([
-                'success' => true,
-                'id'      => $id_pessoa,
-                'nome'    => $nome,
-                'cpf_cnpj'=> $cpf_cnpj
-            ]);
-            exit;
-        } catch (Exception $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
-            exit;
-        }
-    }
-
-    // 2. AJAX: Criar Equipamento Rápido
-    if ($ajaxAction === 'create_equipamento') {
-        $aparelho     = trim(filter_input(INPUT_POST, 'modal_aparelho', FILTER_DEFAULT));
-        $marca        = trim(filter_input(INPUT_POST, 'modal_marca', FILTER_DEFAULT));
-        $modelo       = trim(filter_input(INPUT_POST, 'modal_modelo', FILTER_DEFAULT));
-        $numero_serie = trim(filter_input(INPUT_POST, 'modal_numero_serie', FILTER_DEFAULT));
-        $id_cliente   = filter_input(INPUT_POST, 'modal_id_cliente', FILTER_VALIDATE_INT);
-
-        if (empty($aparelho) || !$id_cliente) {
-            echo json_encode(['success' => false, 'error' => 'Aparelho e proprietário são de preenchimento obrigatório.']);
-            exit;
-        }
-
-        try {
-            $pdo->beginTransaction();
-
-            $sqlInsert = "INSERT INTO equipamento (aparelho, marca, modelo, numero_serie, id_cliente) 
-                          VALUES (:aparelho, :marca, :modelo, :numero_serie, :id_cliente)";
-            $stmt = $pdo->prepare($sqlInsert);
-            $stmt->execute([
-                ':aparelho'     => $aparelho,
-                ':marca'        => $marca,
-                ':modelo'       => $modelo,
-                ':numero_serie' => $numero_serie,
-                ':id_cliente'   => $id_cliente
-            ]);
-            $id_eq = $pdo->lastInsertId();
-
-            $stmtProp = $pdo->prepare("
-                INSERT INTO equipamento_proprietario (id_equipamento, id_cliente, data_inicio, observacao)
-                VALUES (:id_equipamento, :id_cliente, NOW(), 'Cadastro rápido pela OS')
-            ");
-            $stmtProp->execute([
-                ':id_equipamento' => $id_eq,
-                ':id_cliente' => $id_cliente
-            ]);
-
-            $pdo->commit();
-
-            echo json_encode([
-                'success'  => true,
-                'id'       => $id_eq,
-                'aparelho' => $aparelho,
-                'marca'    => $marca,
-                'modelo'   => $modelo,
-                'id_cliente' => $id_cliente
-            ]);
-            exit;
-        } catch (PDOException $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            echo json_encode(['success' => false, 'error' => 'Erro interno ao tentar cadastrar o equipamento.']);
-            exit;
-        }
-    }
 }
 
 // Auxiliares locais de moeda para evitar conflito de redeclarações
@@ -302,13 +169,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $status = 'aguardando_analise';
     }
 
+    $editData = array_merge($editData, [
+        'id_cliente'              => $id_cliente ?: '',
+        'id_equipamento'          => $id_equipamento ?: '',
+        'id_tecnico'              => $id_tecnico ?: '',
+        'descricao_problema'      => $descricao_problema,
+        'estado_aparelho_entrada' => $estado_aparelho_entrada,
+        'diagnostico'             => $diagnostico,
+        'valor_mao_obra'          => formatDecimalOS($valor_mao_obra),
+        'status'                  => $status,
+    ]);
+
     // Coleta de arrays de peças dinâmicas vindas do formulário
     $postProdutos    = $_POST['item_produto_id'] ?? [];
     $postQuantidades = $_POST['item_quantidade'] ?? [];
 
     $statusPermitidos = array_merge(array_keys(getOSStatusOptions()), ['reparo_concluido']);
-    if (!$id_cliente || !$id_equipamento || !$id_tecnico || empty($status) || !in_array($status, $statusPermitidos, true)) {
-        $message = 'Cliente, Equipamento, Técnico Responsável e Status são de preenchimento obrigatório.';
+    if (!$id_cliente) {
+        $message = 'Selecione ou cadastre um cliente antes de salvar a OS.';
+        $messageType = 'danger';
+    } elseif (!$id_equipamento) {
+        $message = 'Selecione ou cadastre um equipamento para este cliente antes de salvar a OS.';
+        $messageType = 'danger';
+    } elseif (!$id_tecnico) {
+        $message = 'Selecione o técnico responsável antes de salvar a OS.';
+        $messageType = 'danger';
+    } elseif (empty($status) || !in_array($status, $statusPermitidos, true)) {
+        $message = 'Selecione um status válido para a OS.';
         $messageType = 'danger';
     } else {
         try {
@@ -545,7 +432,6 @@ if ($action === 'delete' && $editId) {
 // Recuperação das Listas de Suporte
 // ==========================================================================
 $clientesList = [];
-$cidadesList = [];
 $equipamentosList = [];
 $tecnicosList = [];
 $produtosList = [];
@@ -561,22 +447,14 @@ try {
         ORDER BY p.nome ASC
     ")->fetchAll();
 
-    // 2. Lista de Cidades com Estados para o dropdown do cadastro rápido de clientes
-    $cidadesList = $pdo->query("
-        SELECT c.id_cidade, c.nome AS cidade, e.sigla AS uf 
-        FROM cidade c 
-        INNER JOIN estado e ON c.id_estado = e.id_estado 
-        ORDER BY c.nome ASC
-    ")->fetchAll();
-
-    // 3. Equipamentos mapeados para uso em filtro JS
+    // 2. Equipamentos mapeados para uso em filtro JS
     $equipamentosList = $pdo->query("
         SELECT id_equipamento, aparelho, marca, modelo, id_cliente 
         FROM equipamento 
         ORDER BY aparelho ASC
     ")->fetchAll();
 
-    // 4. Técnicos/Funcionários ativos no sistema
+    // 3. Técnicos/Funcionários ativos no sistema
     $tecnicosList = $pdo->query("
         SELECT p.id_pessoa, p.nome, f.cargo, f.perfil_acesso
         FROM funcionario f 
@@ -585,10 +463,10 @@ try {
         ORDER BY p.nome ASC
     ")->fetchAll();
 
-    // 5. Produtos em estoque para listagem de peças
+    // 4. Produtos em estoque para listagem de peças
     $produtosList = $pdo->query("SELECT id_produto, descricao, valor, estoque FROM produto ORDER BY descricao ASC")->fetchAll();
 
-    // 6. Listagem Geral de Ordens de Serviço (Junções Completas)
+    // 5. Listagem Geral de Ordens de Serviço (Junções Completas)
     $sqlOS = "
         SELECT o.id_os, o.data_abertura, o.updated_at, o.status, o.valor_total,
                pCli.nome AS cliente_nome, 
@@ -659,7 +537,7 @@ try {
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>
-                                        <button type="button" id="btn-open-modal-cliente" class="btn btn-secondary" style="padding: 10px 14px; font-weight: 700; font-size: 16px;" title="Registrar Cliente Rápido">+</button>
+                                        <a href="index.php?page=clientes&return=os" id="btn-escolher-cliente" class="btn btn-secondary" style="padding: 10px 14px; font-weight: 700; font-size: 13px; white-space: nowrap;" title="Selecionar ou cadastrar cliente no módulo principal">Abrir</a>
                                     </div>
                                 </div>
 
@@ -670,7 +548,6 @@ try {
                                             <option value="">Selecione o cliente primeiro...</option>
                                         </select>
                                         <a href="#" id="btn-escolher-equipamento" class="btn btn-secondary" style="padding: 10px 14px; font-weight: 700; font-size: 13px; white-space: nowrap; pointer-events: none; opacity: 0.55;" title="Selecionar ou cadastrar equipamento no módulo principal">Abrir</a>
-                                        <button type="button" id="btn-open-modal-equipamento" class="btn btn-secondary" style="padding: 10px 14px; font-weight: 700; font-size: 16px;" title="Registrar Equipamento Rápido" disabled>+</button>
                                     </div>
                                 </div>
                             </div>
@@ -799,133 +676,12 @@ try {
                 </form>
             </div>
 
-            <!-- JANELA MODAL: REGISTRO RÁPIDO DE CLIENTES COMPLETO -->
-            <div id="modal-novo-cliente" style="display: none; position: fixed; inset: 0; background-color: rgba(15, 23, 42, 0.85); align-items: center; justify-content: center; z-index: 9999; padding: 20px; overflow-y: auto;">
-                <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); max-width: 650px; width: 100%; padding: 32px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6); display: flex; flex-direction: column; gap: 20px;">
-                    <h3 style="font-size: 18px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">Registrar Novo Cliente</h3>
-                    
-                    <form id="form-modal-cliente" autocomplete="off">
-                        <div style="display: flex; gap: 24px; margin-bottom: 16px; background-color: rgba(255,255,255,0.02); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-                            <span class="form-label" style="margin-bottom: 0; align-self: center;">Tipo:</span>
-                            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
-                                <input type="radio" name="modal_tipo_pessoa" value="FISICA" checked style="width: 16px; height: 16px;"> Pessoa Física
-                            </label>
-                            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
-                                <input type="radio" name="modal_tipo_pessoa" value="JURIDICA" style="width: 16px; height: 16px;"> Pessoa Jurídica
-                            </label>
-                        </div>
-
-                        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
-                            <div class="form-group">
-                                <label id="modal_lbl_nome" class="form-label">Nome Completo</label>
-                                <input type="text" id="modal_nome" name="modal_nome" class="form-control" required placeholder="Ex: João da Silva">
-                            </div>
-                            <div class="form-group">
-                                <label id="modal_lbl_rg_ie" class="form-label">RG</label>
-                                <input type="text" id="modal_rg_ie" name="modal_rg_ie" class="form-control" placeholder="Ex: 0000000">
-                            </div>
-                        </div>
-
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                            <div class="form-group">
-                                <label id="modal_lbl_cpf_cnpj" class="form-label">CPF (Opcional)</label>
-                                <input type="text" id="modal_cpf_cnpj" name="modal_cpf_cnpj" class="form-control" placeholder="000.000.000-00">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Telefone de Contacto</label>
-                                <input type="text" id="modal_telefone" name="modal_telefone" class="form-control" placeholder="(67) 99999-9999">
-                            </div>
-                        </div>
-
-                        <div style="display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 16px;">
-                            <div class="form-group">
-                                <label class="form-label">CEP (Auto-completar)</label>
-                                <input type="text" id="modal_cep" name="modal_cep" class="form-control" placeholder="79800-000" maxlength="9">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Endereço</label>
-                                <input type="text" id="modal_endereco" name="modal_endereco" class="form-control" placeholder="Rua, Avenida">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Número</label>
-                                <input type="text" id="modal_numero" name="modal_numero" class="form-control" placeholder="123">
-                            </div>
-                        </div>
-
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                            <div class="form-group">
-                                <label class="form-label">Bairro</label>
-                                <input type="text" id="modal_bairro" name="modal_bairro" class="form-control" placeholder="Centro">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Cidade</label>
-                                <select id="modal_id_cidade" name="modal_id_cidade" class="form-control" required>
-                                    <option value="">Selecione a cidade...</option>
-                                    <?php foreach ($cidadesList as $cid): ?>
-                                        <option value="<?php echo $cid['id_cidade']; ?>">
-                                            <?php echo htmlspecialchars($cid['cidade']) . ' (' . htmlspecialchars($cid['uf']) . ')'; ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 16px;">
-                            <button type="button" id="btn-close-modal-cliente" class="btn btn-secondary">Cancelar</button>
-                            <button type="submit" class="btn btn-primary">Registrar Cliente</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <!-- JANELA MODAL: REGISTRO RÁPIDO DE EQUIPAMENTOS -->
-            <div id="modal-novo-equipamento" style="display: none; position: fixed; inset: 0; background-color: rgba(15, 23, 42, 0.85); align-items: center; justify-content: center; z-index: 9999; padding: 20px; overflow-y: auto;">
-                <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); max-width: 500px; width: 100%; padding: 32px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6); display: flex; flex-direction: column; gap: 20px;">
-                    <h3 style="font-size: 18px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">Registrar Equipamento</h3>
-                    
-                    <p style="font-size: 13px; color: var(--text-muted); margin: 0; background-color: rgba(255,255,255,0.02); padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-                        Proprietário: <strong id="modal_proprietario_nome" style="color: var(--primary);">Nenhum</strong>
-                    </p>
-
-                    <form id="form-modal-equipamento" autocomplete="off">
-                        <input type="hidden" id="modal_id_cliente" name="modal_id_cliente">
-
-                        <div class="form-group">
-                            <label class="form-label">Nome do Aparelho / Item</label>
-                            <input type="text" id="modal_aparelho" name="modal_aparelho" class="form-control" placeholder="Ex: Notebook, Smartphone" required>
-                        </div>
-
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                            <div class="form-group">
-                                <label class="form-label">Marca</label>
-                                <input type="text" id="modal_marca" name="modal_marca" class="form-control" placeholder="Ex: Dell, Apple">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Modelo</label>
-                                <input type="text" id="modal_modelo" name="modal_modelo" class="form-control" placeholder="Ex: Inspiron 15">
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label class="form-label">Número de Série (N/S)</label>
-                            <input type="text" id="modal_numero_serie" name="modal_numero_serie" class="form-control" placeholder="Ex: BR123456">
-                        </div>
-
-                        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 16px;">
-                            <button type="button" id="btn-close-modal-equipamento" class="btn btn-secondary">Cancelar</button>
-                            <button type="submit" class="btn btn-primary">Registrar Equipamento</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
             <!-- MOTOR DE LOGICA DE CONTROLE (ViaCEP, Filtros de Equipamento, Cálculos Dinâmicos) -->
             <script>
             document.addEventListener('DOMContentLoaded', function() {
                 const form = document.getElementById('formOS');
                 const selectCliente = document.getElementById('id_cliente');
                 const selectEquipamento = document.getElementById('id_equipamento');
-                const btnAddEquipamento = document.getElementById('btn-open-modal-equipamento');
                 const btnEscolherEquipamento = document.getElementById('btn-escolher-equipamento');
                 
                 // Arrays predefinidos de equipamentos vindos do PHP
@@ -939,7 +695,6 @@ try {
                     
                     if (clienteId === '') {
                         selectEquipamento.disabled = true;
-                        btnAddEquipamento.disabled = true;
                         if (btnEscolherEquipamento) {
                             btnEscolherEquipamento.href = '#';
                             btnEscolherEquipamento.style.pointerEvents = 'none';
@@ -965,7 +720,6 @@ try {
                         });
                         selectEquipamento.disabled = false;
                     }
-                    btnAddEquipamento.disabled = false; // Habilita o botão "+" de equipamento já que temos cliente selecionado
                     if (btnEscolherEquipamento) {
                         btnEscolherEquipamento.href = `index.php?page=equipamentos&return=os&action=create&id_cliente=${encodeURIComponent(clienteId)}`;
                         btnEscolherEquipamento.style.pointerEvents = '';
@@ -980,303 +734,29 @@ try {
                     }
                 }
 
-                // 2. CONTROLE DE ABERTURA E OPERAÇÕES DOS MODALS ASSÍNCRONOS
-                const modalCliente = document.getElementById('modal-novo-cliente');
-                const modalEquipamento = document.getElementById('modal-novo-equipamento');
-
-                const btnOpenCliente = document.getElementById('btn-open-modal-cliente');
-                const btnCloseCliente = document.getElementById('btn-close-modal-cliente');
-                const formModalCliente = document.getElementById('form-modal-cliente');
-
-                const btnCloseEquipamento = document.getElementById('btn-close-modal-equipamento');
-                const formModalEquipamento = document.getElementById('form-modal-equipamento');
-
-                // Manipuladores de abertura e fechamento
-                btnOpenCliente.addEventListener('click', () => {
-                    modalCliente.style.display = 'flex';
-                    document.getElementById('modal_nome').focus();
-                });
-
-                btnCloseCliente.addEventListener('click', () => {
-                    formModalCliente.reset();
-                    modalCliente.style.display = 'none';
-                });
-
-                btnAddEquipamento.addEventListener('click', () => {
-                    const clienteNome = selectCliente.options[selectCliente.selectedIndex].text;
-                    document.getElementById('modal_proprietario_nome').textContent = clienteNome;
-                    document.getElementById('modal_id_cliente').value = selectCliente.value;
-                    modalEquipamento.style.display = 'flex';
-                    document.getElementById('modal_aparelho').focus();
-                });
-
-                btnCloseEquipamento.addEventListener('click', () => {
-                    formModalEquipamento.reset();
-                    modalEquipamento.style.display = 'none';
-                });
-
-                // Tratamento dinâmico de Tipo de Pessoa no Modal
-                const modalCpfCnpjInput = document.getElementById('modal_cpf_cnpj');
-                const modalLblNome = document.getElementById('modal_lbl_nome');
-                const modalLblCpfCnpj = document.getElementById('modal_lbl_cpf_cnpj');
-                const modalLblRgIe = document.getElementById('modal_lbl_rg_ie');
-
-                function ajustarModalTipoPessoa() {
-                    const selectedType = document.querySelector('input[name="modal_tipo_pessoa"]:checked').value;
-                    if (selectedType === 'FISICA') {
-                        modalLblNome.textContent = 'Nome Completo';
-                        modalLblCpfCnpj.textContent = 'CPF (Opcional)';
-                        modalCpfCnpjInput.placeholder = '000.000.000-00';
-                        modalLblRgIe.textContent = 'RG';
-                    } else {
-                        modalLblNome.textContent = 'Razão Social';
-                        modalLblCpfCnpj.textContent = 'CNPJ (Opcional)';
-                        modalCpfCnpjInput.placeholder = '00.000.000/0001-00';
-                        modalLblRgIe.textContent = 'Inscrição Estadual (IE)';
-                    }
-                    modalCpfCnpjInput.value = '';
-                }
-
-                document.querySelectorAll('input[name="modal_tipo_pessoa"]').forEach(radio => {
-                    radio.addEventListener('change', ajustarModalTipoPessoa);
-                });
-
-                // Autocompletar CEP na Janela Modal de Clientes
-                const modalCepInput = document.getElementById('modal_cep');
-                const modalEnderecoInput = document.getElementById('modal_endereco');
-                const modalBairroInput = document.getElementById('modal_bairro');
-                const modalCidadeSelect = document.getElementById('modal_id_cidade');
-
-                if (modalCepInput) {
-                    modalCepInput.addEventListener('input', function() {
-                        let v = this.value.replace(/\D/g, '');
-                        if (v.length > 8) v = v.slice(0, 8);
-                        v = v.replace(/^(\d{5})(\d{1,3})$/, '$1-$2');
-                        this.value = v;
-
-                        const cleanCEP = v.replace(/\D/g, '');
-                        if (cleanCEP.length === 8) {
-                            buscarCepModal(cleanCEP);
-                        }
-                    });
-                }
-
-                function buscarCepModal(cep) {
-                    modalCepInput.style.borderColor = 'var(--primary)';
-                    fetch(`https://viacep.com.br/ws/${cep}/json/`)
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.erro) {
-                                mostrarNotificacaoErro("CEP não localizado na base de dados.");
-                                modalCepInput.style.borderColor = '#ef4444';
-                                return;
-                            }
-                            modalEnderecoInput.value = data.logradouro || '';
-                            modalBairroInput.value = data.bairro || '';
-                            
-                            const localidade = data.localidade.toLowerCase();
-                            for (let i = 0; i < modalCidadeSelect.options.length; i++) {
-                                const optText = modalCidadeSelect.options[i].text.toLowerCase();
-                                if (optText.includes(localidade)) {
-                                    modalCidadeSelect.selectedIndex = i;
-                                    break;
-                                }
-                            }
-                            modalCepInput.style.borderColor = 'var(--success)';
-                        })
-                        .catch(() => {
-                            mostrarNotificacaoErro("Não foi possível conectar com o serviço de CEP.");
-                            modalCepInput.style.borderColor = '#ef4444';
-                        });
-                }
-
-                // Máscaras de entrada em tempo real para os campos do Modal
-                if (modalCpfCnpjInput) {
-                    modalCpfCnpjInput.addEventListener('input', function() {
-                        const selectedType = document.querySelector('input[name="modal_tipo_pessoa"]:checked').value;
-                        let v = this.value.replace(/\D/g, '');
-                        if (selectedType === 'FISICA') {
-                            if (v.length > 11) v = v.slice(0, 11);
-                            v = v.replace(/(\d{3})(\d)/, '$1.$2');
-                            v = v.replace(/(\d{3})(\d)/, '$1.$2');
-                            v = v.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
-                        } else {
-                            if (v.length > 14) v = v.slice(0, 14);
-                            v = v.replace(/^(\d{2})(\d)/, '$1.$2');
-                            v = v.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
-                            v = v.replace(/\.(\d{3})(\d)/, '.$1/$2');
-                            v = v.replace(/(\d{4})(\d{1,2})$/, '$1-$2');
-                        }
-                        this.value = v;
-                    });
-                }
-
-                const modalTel = document.getElementById('modal_telefone');
-                if (modalTel) {
-                    modalTel.addEventListener('input', function() {
-                        let v = this.value.replace(/\D/g, '');
-                        if (v.length > 11) v = v.slice(0, 11);
-                        if (v.length > 10) {
-                            v = v.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3');
-                        } else if (v.length > 5) {
-                            v = v.replace(/^(\d{2})(\d{4})(\d{4})$/, '($1) $2-$3');
-                        } else if (v.length > 2) {
-                            v = v.replace(/^(\d{2})(\d*)$/, '($1) $2');
-                        } else {
-                            v = v.replace(/^(\d*)$/, '($1');
-                        }
-                        this.value = v;
-                    });
-                }
-
-                // Auxiliares de Validação de Documentos no modal
-                function validarCPF(cpf) {
-                    cpf = cpf.replace(/\D/g, '');
-                    if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
-                    let soma = 0, resto;
-                    for (let i = 1; i <= 9; i++) soma += parseInt(cpf.substring(i-1, i)) * (11 - i);
-                    resto = (soma * 10) % 11;
-                    if (resto === 10 || resto === 11) resto = 0;
-                    if (resto !== parseInt(cpf.substring(9, 10))) return false;
-                    soma = 0;
-                    for (let i = 1; i <= 10; i++) soma += parseInt(cpf.substring(i-1, i)) * (12 - i);
-                    resto = (soma * 10) % 11;
-                    if (resto === 10 || resto === 11) resto = 0;
-                    if (resto !== parseInt(cpf.substring(10, 11))) return false;
-                    return true;
-                }
-
-                function validarCNPJ(cnpj) {
-                    cnpj = cnpj.replace(/\D/g, '');
-                    if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
-                    let tamanho = cnpj.length - 2;
-                    let numeros = cnpj.substring(0, tamanho);
-                    let digitos = cnpj.substring(tamanho);
-                    let soma = 0, pos = tamanho - 7;
-                    for (let i = tamanho; i >= 1; i--) {
-                        soma += numeros.charAt(tamanho - i) * pos--;
-                        if (pos < 2) pos = 9;
-                    }
-                    let resultado = soma % 11 < 2 ? 0 : 11 - (soma % 11);
-                    if (resultado != digitos.charAt(0)) return false;
-                    tamanho = tamanho + 1;
-                    numeros = cnpj.substring(0, tamanho);
-                    soma = 0;
-                    pos = tamanho - 7;
-                    for (let i = tamanho; i >= 1; i--) {
-                        soma += numeros.charAt(tamanho - i) * pos--;
-                        if (pos < 2) pos = 9;
-                    }
-                    resultado = soma % 11 < 2 ? 0 : 11 - (soma % 11);
-                    if (resultado != digitos.charAt(1)) return false;
-                    return true;
-                }
-
-                // SUBMISSÃO DOS FORMULÁRIOS DE MODAL VIA FETCH (AJAX)
-                formModalCliente.addEventListener('submit', function(e) {
-                    e.preventDefault();
-                    
-                    const docVal = modalCpfCnpjInput.value;
-                    const tipo = document.querySelector('input[name="modal_tipo_pessoa"]:checked').value;
-
-                    if (docVal !== '') {
-                        if (tipo === 'FISICA' && !validarCPF(docVal)) {
-                            mostrarNotificacaoErro('O CPF informado no cadastro rápido é inválido.');
-                            modalCpfCnpjInput.focus();
-                            return;
-                        } else if (tipo === 'JURIDICA' && !validarCNPJ(docVal)) {
-                            mostrarNotificacaoErro('O CNPJ informado no cadastro rápido é inválido.');
-                            modalCpfCnpjInput.focus();
-                            return;
-                        }
-                    }
-
-                    const formData = new FormData(this);
-                    fetch('index.php?page=os&ajax_action=create_cliente', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.success) {
-                            // Adiciona dinamicamente a nova opção de cliente no dropdown principal e seleciona-a
-                            const opt = document.createElement('option');
-                            opt.value = data.id;
-                            opt.text = data.nome + (data.cpf_cnpj ? ` (${data.cpf_cnpj})` : '');
-                            opt.selected = true;
-                            selectCliente.appendChild(opt);
-
-                            // Limpa e fecha a modal
-                            formModalCliente.reset();
-                            modalCliente.style.display = 'none';
-
-                            // Força a atualização do seletor de equipamentos correspondente
-                            filtrarEquipamentos();
-                            mostrarNotificacaoSucesso('Cliente cadastrado e selecionado com sucesso!');
-                        } else {
-                            mostrarNotificacaoErro(data.error || 'Não foi possível cadastrar o cliente.');
-                        }
-                    })
-                    .catch(() => {
-                        mostrarNotificacaoErro('Erro de comunicação assíncrona com o servidor.');
-                    });
-                });
-
-                formModalEquipamento.addEventListener('submit', function(e) {
-                    e.preventDefault();
-                    const formData = new FormData(this);
-
-                    fetch('index.php?page=os&ajax_action=create_equipamento', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.success) {
-                            // Adiciona o equipamento inserido ao array local do JS para que a filtragem dinâmica permaneça integrada!
-                            equipamentos.push({
-                                id_equipamento: data.id,
-                                aparelho: data.aparelho,
-                                marca: data.marca,
-                                modelo: data.modelo,
-                                id_cliente: data.id_cliente
-                            });
-
-                            // Atualiza os dropdowns
-                            const novoId = data.id;
-                            selectEquipamento.innerHTML = '<option value="">Selecione o equipamento...</option>';
-                            const filtrados = equipamentos.filter(eq => eq.id_cliente == data.id_cliente);
-                            
-                            filtrados.forEach(eq => {
-                                const option = document.createElement('option');
-                                option.value = eq.id_equipamento;
-                                option.text = `${eq.aparelho} ${eq.marca ? `(${eq.marca})` : ''} ${eq.modelo ? `[${eq.modelo}]` : ''}`;
-                                if (eq.id_equipamento == novoId) {
-                                    option.selected = true;
-                                }
-                                selectEquipamento.appendChild(option);
-                            });
-                            selectEquipamento.disabled = false;
-
-                            // Fecha modal e reseta formulário
-                            formModalEquipamento.reset();
-                            modalEquipamento.style.display = 'none';
-                            mostrarNotificacaoSucesso('Equipamento cadastrado e vinculado com sucesso!');
-                        } else {
-                            mostrarNotificacaoErro(data.error || 'Erro ao registrar o equipamento.');
-                        }
-                    })
-                    .catch(() => {
-                        mostrarNotificacaoErro('Erro ao salvar as informações do equipamento.');
-                    });
-                });
-
-
-                // 3. IMPEDE A SUBMISSÃO DO FORMULÁRIO AO TECLAR ENTER
+                // 2. IMPEDE A SUBMISSÃO DO FORMULÁRIO AO TECLAR ENTER
                 if (form) {
                     form.addEventListener('keydown', function(e) {
                         if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
                             e.preventDefault();
+                            return false;
+                        }
+                    });
+
+                    form.addEventListener('submit', function(e) {
+                        if (!selectCliente || selectCliente.value === '') {
+                            e.preventDefault();
+                            mostrarNotificacaoErro('Selecione ou cadastre um cliente antes de salvar a OS.');
+                            selectCliente.focus();
+                            return false;
+                        }
+
+                        if (!selectEquipamento || selectEquipamento.disabled || selectEquipamento.value === '') {
+                            e.preventDefault();
+                            mostrarNotificacaoErro('Selecione ou cadastre um equipamento para este cliente antes de salvar a OS.');
+                            if (btnEscolherEquipamento && btnEscolherEquipamento.href && btnEscolherEquipamento.href !== '#') {
+                                btnEscolherEquipamento.focus();
+                            }
                             return false;
                         }
                     });

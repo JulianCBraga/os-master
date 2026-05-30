@@ -59,6 +59,8 @@ try {
 
 $message = '';
 $messageType = ''; // 'success' ou 'danger'
+$funcionarioFolhas = [];
+$funcionarioOsRecentes = [];
 
 // Captura parâmetros de ação para edição ou alteração de status
 $action = $_GET['action'] ?? 'list';
@@ -273,11 +275,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ==========================================================================
 // Processamento de Ações de URL (GET)
 // ==========================================================================
-if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $action === 'edit' && $editId) {
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && ($action === 'edit' || $action === 'view') && $editId) {
     try {
-        $sqlEdit = "SELECT p.*, f.cargo, f.perfil_acesso, f.data_admissao, f.data_desligamento, f.status AS status, f.salario, f.comissao_os, f.valor_comissao_os, f.comissao_mo, f.valor_comissao_mo 
+        $sqlEdit = "SELECT p.*, f.cargo, f.perfil_acesso, f.data_admissao, f.data_desligamento, f.status AS status, f.salario, f.comissao_os, f.valor_comissao_os, f.comissao_mo, f.valor_comissao_mo,
+                           c.nome AS cidade_nome, e.sigla AS uf
                     FROM pessoa p 
                     INNER JOIN funcionario f ON p.id_pessoa = f.id_pessoa 
+                    LEFT JOIN cidade c ON p.id_cidade = c.id_cidade
+                    LEFT JOIN estado e ON c.id_estado = e.id_estado
                     WHERE p.id_pessoa = :id LIMIT 1";
         
         $stmtEdit = $pdo->prepare($sqlEdit);
@@ -290,6 +295,30 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $action === 'edit' && $editId) {
             $editData['salario'] = formatBrazilianDecimal($data['salario']);
             $editData['valor_comissao_os'] = formatBrazilianDecimal($data['valor_comissao_os']);
             $editData['valor_comissao_mo'] = formatBrazilianDecimal($data['valor_comissao_mo']);
+
+            if ($action === 'view') {
+                $stmtFolhas = $pdo->prepare("
+                    SELECT mes_referencia, ano_referencia, valor_salario_base, total_comissao, valor_total_receber, pago
+                    FROM folha_pagto
+                    WHERE id_funcionario = :id
+                    ORDER BY ano_referencia DESC, mes_referencia DESC
+                    LIMIT 4
+                ");
+                $stmtFolhas->execute([':id' => $editId]);
+                $funcionarioFolhas = $stmtFolhas->fetchAll();
+
+                $stmtOs = $pdo->prepare("
+                    SELECT os.id_os, os.data_abertura, os.status, p.nome AS cliente_nome, eq.aparelho, eq.marca, eq.modelo
+                    FROM os
+                    INNER JOIN pessoa p ON os.id_cliente = p.id_pessoa
+                    INNER JOIN equipamento eq ON os.id_equipamento = eq.id_equipamento
+                    WHERE os.id_tecnico = :id
+                    ORDER BY os.data_abertura DESC
+                    LIMIT 4
+                ");
+                $stmtOs->execute([':id' => $editId]);
+                $funcionarioOsRecentes = $stmtOs->fetchAll();
+            }
         } else {
             $message = 'Funcionário não encontrado.';
             $messageType = 'danger';
@@ -380,7 +409,180 @@ try {
 
         <div style="display: grid; grid-template-columns: 1fr; gap: 32px;">
             
-            <?php if ($action === 'create' || $action === 'edit'): ?>
+            <?php if ($action === 'view' && $editId): ?>
+                <div class="card printable-card">
+                    <div class="module-header no-print">
+                        <div>
+                            <h2 class="module-title">Ficha do Funcionário #<?php echo htmlspecialchars($editId); ?></h2>
+                            <p class="module-subtitle">Visualização cadastral para consulta e impressão.</p>
+                        </div>
+                        <div class="action-group">
+                            <button type="button" class="btn btn-primary" onclick="window.print()">Imprimir Ficha</button>
+                            <a href="index.php?page=funcionarios&action=edit&id=<?php echo $editId; ?>" class="btn btn-secondary">Editar</a>
+                            <a href="index.php?page=funcionarios" class="btn btn-secondary">Voltar</a>
+                        </div>
+                    </div>
+
+                    <div class="print-header">
+                        <h1>Ficha do Funcionário</h1>
+                        <p>Cadastro #<?php echo htmlspecialchars($editId); ?> - <?php echo date('d/m/Y H:i'); ?></p>
+                    </div>
+
+                    <div class="form-section" style="margin-top: 0;">
+                        <h3 class="form-section-title">Identificação</h3>
+                        <div class="form-grid form-grid-3">
+                            <div>
+                                <div class="table-muted-text">Nome Completo</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['nome']); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">CPF</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['cpf_cnpj'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">RG</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['rg_ie'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Telefone</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['telefone'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Status</div>
+                                <div class="table-primary-text"><?php echo ((int)$editData['status'] === 1) ? 'Ativo' : 'Inativo'; ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Tipo</div>
+                                <div class="table-primary-text">Funcionário / Cliente</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3 class="form-section-title">Dados Funcionais</h3>
+                        <div class="form-grid form-grid-3">
+                            <div>
+                                <div class="table-muted-text">Cargo</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['cargo'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Perfil de Acesso</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['perfil_acesso'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Salário Base</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($currencySymbol); ?> <?php echo htmlspecialchars($editData['salario']); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Admissão</div>
+                                <div class="table-primary-text"><?php echo !empty($editData['data_admissao']) ? date('d/m/Y', strtotime($editData['data_admissao'])) : 'Não informada'; ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Desligamento</div>
+                                <div class="table-primary-text"><?php echo !empty($editData['data_desligamento']) ? date('d/m/Y', strtotime($editData['data_desligamento'])) : 'Não informado'; ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Comissões</div>
+                                <div class="table-primary-text">
+                                    Peças: <?php echo ((int)$editData['comissao_os'] === 1) ? htmlspecialchars($editData['valor_comissao_os']) . '%' : 'Não'; ?> |
+                                    Mão de obra: <?php echo ((int)$editData['comissao_mo'] === 1) ? htmlspecialchars($editData['valor_comissao_mo']) . '%' : 'Não'; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3 class="form-section-title">Endereço</h3>
+                        <div class="form-grid form-grid-3">
+                            <div>
+                                <div class="table-muted-text">CEP</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['cep'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Endereço</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['endereco'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Número</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['numero'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Bairro</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['bairro'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Cidade / UF</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars(($editData['cidade_nome'] ?? '') ? $editData['cidade_nome'] . ' / ' . ($editData['uf'] ?? '') : 'Não informada'); ?></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3 class="form-section-title">Folha de Pagamento Recente</h3>
+                        <?php if (empty($funcionarioFolhas)): ?>
+                            <p style="color: var(--text-muted); font-size: 14px; margin: 0;">Nenhuma folha de pagamento registrada para este funcionário.</p>
+                        <?php else: ?>
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Referência</th>
+                                            <th>Salário</th>
+                                            <th>Comissão</th>
+                                            <th>Total</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($funcionarioFolhas as $folha): ?>
+                                            <tr>
+                                                <td><?php echo str_pad((string)$folha['mes_referencia'], 2, '0', STR_PAD_LEFT); ?>/<?php echo htmlspecialchars($folha['ano_referencia']); ?></td>
+                                                <td><?php echo htmlspecialchars($currencySymbol); ?> <?php echo formatBrazilianDecimal($folha['valor_salario_base']); ?></td>
+                                                <td><?php echo htmlspecialchars($currencySymbol); ?> <?php echo formatBrazilianDecimal($folha['total_comissao']); ?></td>
+                                                <td><?php echo htmlspecialchars($currencySymbol); ?> <?php echo formatBrazilianDecimal($folha['valor_total_receber']); ?></td>
+                                                <td><?php echo ((int)$folha['pago'] === 1) ? 'Pago' : 'Pendente'; ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="form-section">
+                        <h3 class="form-section-title">OS Recentes como Técnico</h3>
+                        <?php if (empty($funcionarioOsRecentes)): ?>
+                            <p style="color: var(--text-muted); font-size: 14px; margin: 0;">Nenhuma OS recente vinculada a este técnico.</p>
+                        <?php else: ?>
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>OS</th>
+                                            <th>Data</th>
+                                            <th>Cliente</th>
+                                            <th>Equipamento</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($funcionarioOsRecentes as $osRecente): ?>
+                                            <tr>
+                                                <td><code>#<?php echo htmlspecialchars($osRecente['id_os']); ?></code></td>
+                                                <td><?php echo !empty($osRecente['data_abertura']) ? date('d/m/Y', strtotime($osRecente['data_abertura'])) : 'Não informada'; ?></td>
+                                                <td><?php echo htmlspecialchars($osRecente['cliente_nome']); ?></td>
+                                                <td><?php echo htmlspecialchars(trim(($osRecente['aparelho'] ?: '') . ' ' . ($osRecente['marca'] ?: '') . ' ' . ($osRecente['modelo'] ?: '')) ?: 'Não informado'); ?></td>
+                                                <td><?php echo htmlspecialchars($osRecente['status']); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+            <?php elseif ($action === 'create' || $action === 'edit'): ?>
                 <div class="card">
                     <div class="module-header">
                         <div>
@@ -761,7 +963,7 @@ try {
                                         <th>Perfil</th>
                                         <th>Salário Base</th>
                                         <th>Status</th>
-                                        <th style="width: 200px; text-align: right;">Ações</th>
+                                        <th style="width: 270px; text-align: right;">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -793,6 +995,9 @@ try {
                                             </td>
                                             <td style="text-align: right;">
                                                 <div class="action-group">
+                                                <a href="index.php?page=funcionarios&action=view&id=<?php echo $func['id_pessoa']; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px;">
+                                                    Visualizar
+                                                </a>
                                                 <a href="index.php?page=funcionarios&action=edit&id=<?php echo $func['id_pessoa']; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px;">
                                                     Editar
                                                 </a>

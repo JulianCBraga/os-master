@@ -30,6 +30,7 @@ $editId = $_GET['id'] ?? null;
 $returnTo = $_GET['return'] ?? '';
 $returnClienteId = filter_input(INPUT_GET, 'id_cliente', FILTER_VALIDATE_INT);
 $isReturnToOS = ($returnTo === 'os');
+$searchTerm = trim(filter_input(INPUT_GET, 'q', FILTER_DEFAULT) ?? '');
 
 // Instância de dados padrão para o formulário
 $editData = [
@@ -259,12 +260,38 @@ try {
     $clientesList = $pdo->query($sqlClientes)->fetchAll();
 
     // 2. Lista Geral de Equipamentos com junção na tabela Pessoa para exibir o nome do dono
-    $whereEquipamentos = '';
+    $wherePartsEquipamentos = [];
     $paramsEquipamentos = [];
     if ($isReturnToOS && $returnClienteId) {
-        $whereEquipamentos = 'WHERE e.id_cliente = :return_cliente_id';
+        $wherePartsEquipamentos[] = 'e.id_cliente = :return_cliente_id';
         $paramsEquipamentos[':return_cliente_id'] = $returnClienteId;
     }
+    if ($searchTerm !== '') {
+        $wherePartsEquipamentos[] = "(
+            e.id_equipamento = :search_id
+            OR e.aparelho LIKE :search_aparelho
+            OR e.marca LIKE :search_marca
+            OR e.modelo LIKE :search_modelo
+            OR e.numero_serie LIKE :search_serie
+            OR e.cor LIKE :search_cor
+            OR e.patrimonio LIKE :search_patrimonio
+            OR p.nome LIKE :search_cliente
+            OR p.cpf_cnpj LIKE :search_doc
+            OR p.cpf_cnpj_limpo LIKE :search_digits
+        )";
+        $paramsEquipamentos[':search_id'] = ctype_digit($searchTerm) ? (int)$searchTerm : 0;
+        $paramsEquipamentos[':search_aparelho'] = '%' . $searchTerm . '%';
+        $paramsEquipamentos[':search_marca'] = '%' . $searchTerm . '%';
+        $paramsEquipamentos[':search_modelo'] = '%' . $searchTerm . '%';
+        $paramsEquipamentos[':search_serie'] = '%' . $searchTerm . '%';
+        $paramsEquipamentos[':search_cor'] = '%' . $searchTerm . '%';
+        $paramsEquipamentos[':search_patrimonio'] = '%' . $searchTerm . '%';
+        $paramsEquipamentos[':search_cliente'] = '%' . $searchTerm . '%';
+        $paramsEquipamentos[':search_doc'] = '%' . $searchTerm . '%';
+        $digitsTerm = preg_replace('/\D/', '', $searchTerm);
+        $paramsEquipamentos[':search_digits'] = $digitsTerm !== '' ? '%' . $digitsTerm . '%' : '__NO_DIGITS__';
+    }
+    $whereEquipamentos = $wherePartsEquipamentos ? 'WHERE ' . implode(' AND ', $wherePartsEquipamentos) : '';
 
     $sqlEquipamentos = "
         SELECT e.*, p.nome AS cliente_nome, p.cpf_cnpj, c.status AS cliente_status,
@@ -328,8 +355,50 @@ try {
                 </div>
                 
                 <?php if (empty($equipamentosList)): ?>
-                    <p style="color: var(--text-muted); font-size: 14px;">Nenhum equipamento cadastrado no sistema.</p>
+                    <form method="GET" action="index.php" class="form-section" style="margin-top: 0; margin-bottom: 18px;">
+                        <input type="hidden" name="page" value="equipamentos">
+                        <?php if ($isReturnToOS): ?>
+                            <input type="hidden" name="return" value="os">
+                            <input type="hidden" name="action" value="create">
+                            <?php if ($returnClienteId): ?>
+                                <input type="hidden" name="id_cliente" value="<?php echo $returnClienteId; ?>">
+                            <?php endif; ?>
+                        <?php endif; ?>
+                        <div class="form-grid form-grid-2">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="q" class="form-label">Procurar Equipamento</label>
+                                <input type="text" id="q" name="q" class="form-control" value="<?php echo htmlspecialchars($searchTerm); ?>" placeholder="Aparelho, marca, modelo, série, patrimônio, cliente ou código">
+                            </div>
+                            <div style="display: flex; gap: 10px; align-items: flex-end;">
+                                <button type="submit" class="btn btn-primary">Procurar</button>
+                                <a href="index.php?page=equipamentos<?php echo $isReturnToOS ? '&return=os&action=create' . ($returnClienteId ? '&id_cliente=' . $returnClienteId : '') : ''; ?>" class="btn btn-secondary">Limpar</a>
+                            </div>
+                        </div>
+                    </form>
+                    <p style="color: var(--text-muted); font-size: 14px;">
+                        <?php echo $searchTerm !== '' ? 'Nenhum equipamento encontrado para a busca informada.' : 'Nenhum equipamento cadastrado no sistema.'; ?>
+                    </p>
                 <?php else: ?>
+                    <form method="GET" action="index.php" class="form-section" style="margin-top: 0; margin-bottom: 18px;">
+                        <input type="hidden" name="page" value="equipamentos">
+                        <?php if ($isReturnToOS): ?>
+                            <input type="hidden" name="return" value="os">
+                            <input type="hidden" name="action" value="create">
+                            <?php if ($returnClienteId): ?>
+                                <input type="hidden" name="id_cliente" value="<?php echo $returnClienteId; ?>">
+                            <?php endif; ?>
+                        <?php endif; ?>
+                        <div class="form-grid form-grid-2">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="q" class="form-label">Procurar Equipamento</label>
+                                <input type="text" id="q" name="q" class="form-control" value="<?php echo htmlspecialchars($searchTerm); ?>" placeholder="Aparelho, marca, modelo, série, patrimônio, cliente ou código">
+                            </div>
+                            <div style="display: flex; gap: 10px; align-items: flex-end;">
+                                <button type="submit" class="btn btn-primary">Procurar</button>
+                                <a href="index.php?page=equipamentos<?php echo $isReturnToOS ? '&return=os&action=create' . ($returnClienteId ? '&id_cliente=' . $returnClienteId : '') : ''; ?>" class="btn btn-secondary">Limpar</a>
+                            </div>
+                        </div>
+                    </form>
                     <div class="table-responsive">
                         <table class="table">
                             <thead>

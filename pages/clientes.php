@@ -29,6 +29,10 @@ $messageType = ''; // 'success' ou 'danger'
 // Captura parâmetros de ação para edição ou alteração de status
 $action = $_GET['action'] ?? 'list';
 $editId = $_GET['id'] ?? null;
+$returnTo = $_GET['return'] ?? '';
+$isReturnToOS = ($returnTo === 'os');
+$returnQuery = $isReturnToOS ? '&return=os' : '';
+$searchTerm = trim(filter_input(INPUT_GET, 'q', FILTER_DEFAULT) ?? '');
 
 // Instância de dados padrão para o formulário
 $editData = [
@@ -40,6 +44,7 @@ $editData = [
     'contato_financeiro_nome' => '', 'contato_financeiro_whatsapp' => '',
     'observacoes' => ''
 ];
+$clienteEquipamentos = [];
 
 // ==========================================================================
 // Processamento de Ações do Formulário (POST)
@@ -120,7 +125,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
 
                 $pdo->commit();
-                $message = 'Cliente registado com sucesso!';
+                if ($isReturnToOS) {
+                    header("Location: index.php?page=os&action=create&id_cliente={$id_pessoa}");
+                    exit;
+                }
+                $message = 'Cliente cadastrado com sucesso!';
                 $messageType = 'success';
                 $action = 'list';
             } catch (Exception $e) {
@@ -171,6 +180,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
 
                 $pdo->commit();
+                if ($isReturnToOS) {
+                    header("Location: index.php?page=os&action=create&id_cliente={$editId}");
+                    exit;
+                }
                 $message = 'Dados do cliente atualizados com sucesso!';
                 $messageType = 'success';
                 $action = 'list';
@@ -188,16 +201,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ==========================================================================
 // Processamento de Ações de URL (GET)
 // ==========================================================================
-// 1. CARREGAR DADOS DO CLIENTE PARA EDIÇÃO
-if ($action === 'edit' && $editId) {
+// 1. CARREGAR DADOS DO CLIENTE PARA EDIÇÃO / VISUALIZAÇÃO
+if (($action === 'edit' || $action === 'view') && $editId) {
     try {
         $stmtEdit = $pdo->prepare("
             SELECT p.*, c.tipo_cliente, c.origem, c.whatsapp_autorizado,
                    c.contato_servico_nome, c.contato_servico_whatsapp,
                    c.contato_financeiro_nome, c.contato_financeiro_whatsapp,
-                   c.observacoes, c.status AS status, c.data_ultima_interacao 
+                   c.observacoes, c.status AS status, c.data_ultima_interacao,
+                   cid.nome AS cidade_nome, est.sigla AS uf
             FROM pessoa p 
             INNER JOIN cliente c ON p.id_pessoa = c.id_pessoa 
+            LEFT JOIN cidade cid ON p.id_cidade = cid.id_cidade
+            LEFT JOIN estado est ON cid.id_estado = est.id_estado
             WHERE p.id_pessoa = :id LIMIT 1
         ");
         $stmtEdit->execute([':id' => $editId]);
@@ -205,6 +221,16 @@ if ($action === 'edit' && $editId) {
         
         if ($data) {
             $editData = $data;
+            if ($action === 'view') {
+                $stmtEquipamentosCliente = $pdo->prepare("
+                    SELECT id_equipamento, aparelho, marca, modelo, numero_serie, cor, patrimonio
+                    FROM equipamento
+                    WHERE id_cliente = :id_cliente
+                    ORDER BY aparelho ASC
+                ");
+                $stmtEquipamentosCliente->execute([':id_cliente' => $editId]);
+                $clienteEquipamentos = $stmtEquipamentosCliente->fetchAll();
+            }
         } else {
             $message = 'Cliente não encontrado.';
             $messageType = 'danger';
@@ -256,7 +282,25 @@ try {
     $cidadesList = $stmtCid->fetchAll();
 
     // Listagem Geral de Clientes (Pessoa + Cliente)
-    $stmtClientes = $pdo->query("
+    $whereClientes = '';
+    $paramsClientes = [];
+    if ($searchTerm !== '') {
+        $whereClientes = "
+            WHERE p.id_pessoa = :search_id
+               OR p.nome LIKE :search_nome
+               OR p.cpf_cnpj LIKE :search_doc
+               OR p.cpf_cnpj_limpo LIKE :search_digits
+               OR p.telefone LIKE :search_tel
+        ";
+        $paramsClientes[':search_id'] = ctype_digit($searchTerm) ? (int)$searchTerm : 0;
+        $paramsClientes[':search_nome'] = '%' . $searchTerm . '%';
+        $paramsClientes[':search_doc'] = '%' . $searchTerm . '%';
+        $paramsClientes[':search_tel'] = '%' . $searchTerm . '%';
+        $digitsTerm = preg_replace('/\D/', '', $searchTerm);
+        $paramsClientes[':search_digits'] = $digitsTerm !== '' ? '%' . $digitsTerm . '%' : '__NO_DIGITS__';
+    }
+
+    $stmtClientes = $pdo->prepare("
         SELECT p.id_pessoa, p.tipo_pessoa, p.nome, IFNULL(p.cpf_cnpj, 'Não informado') AS cpf_cnpj,
                p.telefone, c.status, c.tipo_cliente, c.origem, c.whatsapp_autorizado,
                c.contato_servico_nome, c.contato_servico_whatsapp,
@@ -264,8 +308,10 @@ try {
                c.data_ultima_interacao
         FROM pessoa p
         INNER JOIN cliente c ON p.id_pessoa = c.id_pessoa
+        {$whereClientes}
         ORDER BY p.nome ASC
     ");
+    $stmtClientes->execute($paramsClientes);
     $clientesList = $stmtClientes->fetchAll();
 } catch (PDOException $e) {
     $message = 'Erro ao obter dados de suporte da base de dados.';
@@ -297,7 +343,156 @@ try {
 
         <div style="display: grid; grid-template-columns: 1fr; gap: 32px;">
             
-            <?php if ($action === 'create' || $action === 'edit'): ?>
+            <?php if ($action === 'view' && $editId): ?>
+                <div class="card printable-card">
+                    <div class="module-header no-print">
+                        <div>
+                            <h2 class="module-title">Ficha do Cliente #<?php echo htmlspecialchars($editId); ?></h2>
+                            <p class="module-subtitle">Visualização cadastral para consulta e impressão.</p>
+                        </div>
+                        <div class="action-group">
+                            <button type="button" class="btn btn-primary" onclick="window.print()">Imprimir Ficha</button>
+                            <a href="index.php?page=clientes&action=edit&id=<?php echo $editId; ?><?php echo $returnQuery; ?>" class="btn btn-secondary">Editar</a>
+                            <a href="<?php echo $isReturnToOS ? 'index.php?page=clientes&return=os' : 'index.php?page=clientes'; ?>" class="btn btn-secondary">Voltar</a>
+                        </div>
+                    </div>
+
+                    <div class="print-header">
+                        <h1>Ficha do Cliente</h1>
+                        <p>Cadastro #<?php echo htmlspecialchars($editId); ?> - <?php echo date('d/m/Y H:i'); ?></p>
+                    </div>
+
+                    <div class="form-section" style="margin-top: 0;">
+                        <h3 class="form-section-title">Identificação</h3>
+                        <div class="form-grid form-grid-3">
+                            <div>
+                                <div class="table-muted-text">Nome / Razão Social</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['nome']); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Tipo de Pessoa</div>
+                                <div class="table-primary-text"><?php echo ($editData['tipo_pessoa'] === 'FISICA') ? 'Pessoa Física' : 'Pessoa Jurídica'; ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Status</div>
+                                <div class="table-primary-text"><?php echo ((int)$editData['status'] === 1) ? 'Ativo' : 'Inativo'; ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">CPF / CNPJ</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['cpf_cnpj'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">RG / IE</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['rg_ie'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Telefone</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['telefone'] ?: 'Não informado'); ?></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3 class="form-section-title">Perfil Comercial</h3>
+                        <div class="form-grid form-grid-3">
+                            <div>
+                                <div class="table-muted-text">Tipo de Cliente</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars(ucfirst(strtolower($editData['tipo_cliente']))); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Origem</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['origem'] ?: 'Não informada'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">WhatsApp</div>
+                                <div class="table-primary-text"><?php echo ((int)$editData['whatsapp_autorizado'] === 1) ? 'Autorizado' : 'Não autorizado'; ?></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <?php if ($editData['tipo_pessoa'] === 'JURIDICA'): ?>
+                        <div class="form-section">
+                            <h3 class="form-section-title">Contatos da Empresa</h3>
+                            <div class="form-grid form-grid-2">
+                                <div>
+                                    <div class="table-muted-text">Contato do Serviço</div>
+                                    <div class="table-primary-text"><?php echo htmlspecialchars($editData['contato_servico_nome'] ?: 'Não informado'); ?></div>
+                                    <div class="table-muted-text"><?php echo htmlspecialchars($editData['contato_servico_whatsapp'] ?: 'WhatsApp não informado'); ?></div>
+                                </div>
+                                <div>
+                                    <div class="table-muted-text">Contato Financeiro</div>
+                                    <div class="table-primary-text"><?php echo htmlspecialchars($editData['contato_financeiro_nome'] ?: 'Não informado'); ?></div>
+                                    <div class="table-muted-text"><?php echo htmlspecialchars($editData['contato_financeiro_whatsapp'] ?: 'WhatsApp não informado'); ?></div>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <div class="form-section">
+                        <h3 class="form-section-title">Endereço</h3>
+                        <div class="form-grid form-grid-3">
+                            <div>
+                                <div class="table-muted-text">CEP</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['cep'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Endereço</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['endereco'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Número</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['numero'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Bairro</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars($editData['bairro'] ?: 'Não informado'); ?></div>
+                            </div>
+                            <div>
+                                <div class="table-muted-text">Cidade / UF</div>
+                                <div class="table-primary-text"><?php echo htmlspecialchars(($editData['cidade_nome'] ?? '') ? $editData['cidade_nome'] . ' / ' . ($editData['uf'] ?? '') : 'Não informada'); ?></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3 class="form-section-title">Equipamentos Vinculados</h3>
+                        <?php if (empty($clienteEquipamentos)): ?>
+                            <p style="color: var(--text-muted); font-size: 14px; margin: 0;">Nenhum equipamento vinculado a este cliente.</p>
+                        <?php else: ?>
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Aparelho</th>
+                                            <th>Marca / Modelo</th>
+                                            <th>Nº de Série</th>
+                                            <th>Identificação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($clienteEquipamentos as $eq): ?>
+                                            <tr>
+                                                <td><code>#<?php echo htmlspecialchars($eq['id_equipamento']); ?></code></td>
+                                                <td><?php echo htmlspecialchars($eq['aparelho']); ?></td>
+                                                <td><?php echo htmlspecialchars(trim(($eq['marca'] ?: '') . ' ' . ($eq['modelo'] ?: '')) ?: 'Não informado'); ?></td>
+                                                <td><?php echo htmlspecialchars($eq['numero_serie'] ?: 'Não informado'); ?></td>
+                                                <td><?php echo htmlspecialchars(trim(($eq['cor'] ?: '') . ' ' . ($eq['patrimonio'] ?: '')) ?: 'Não informada'); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="form-section">
+                        <h3 class="form-section-title">Observações</h3>
+                        <p style="color: var(--text-main); line-height: 1.6; margin: 0;"><?php echo nl2br(htmlspecialchars($editData['observacoes'] ?: 'Nenhuma observação cadastrada.')); ?></p>
+                    </div>
+                </div>
+
+            <?php elseif ($action === 'create' || $action === 'edit'): ?>
                 <!-- Formulário de Registo / Edição -->
                 <div class="card">
                     <div class="module-header">
@@ -307,10 +502,10 @@ try {
                             </h2>
                             <p class="module-subtitle">Dados cadastrais, perfil comercial e endereço para abertura de OS.</p>
                         </div>
-                        <a href="index.php?page=clientes" class="btn btn-secondary">Voltar</a>
+                        <a href="<?php echo $isReturnToOS ? 'index.php?page=os&action=create' : 'index.php?page=clientes'; ?>" class="btn btn-secondary">Voltar</a>
                     </div>
                     
-                    <form id="formCliente" action="index.php?page=clientes<?php echo ($action === 'edit') ? '&action=edit&id=' . $editId : ''; ?>" method="POST" autocomplete="off">
+                    <form id="formCliente" action="index.php?page=clientes<?php echo ($action === 'edit') ? '&action=edit&id=' . $editId : ''; ?><?php echo $returnQuery; ?>" method="POST" autocomplete="off">
                         <input type="hidden" name="form_action" value="<?php echo ($action === 'edit') ? 'update' : 'create'; ?>">
 
                         <div class="choice-row">
@@ -457,8 +652,8 @@ try {
                         </div>
 
                         <div style="display: flex; gap: 12px; margin-top: 32px; justify-content: flex-end;">
-                            <a href="index.php?page=clientes" class="btn btn-secondary">Cancelar</a>
-                            <button type="submit" class="btn btn-primary">Guardar Dados do Cliente</button>
+                            <a href="<?php echo $isReturnToOS ? 'index.php?page=os&action=create' : 'index.php?page=clientes'; ?>" class="btn btn-secondary">Cancelar</a>
+                            <button type="submit" class="btn btn-primary">Salvar Dados do Cliente</button>
                         </div>
                     </form>
                 </div>
@@ -729,17 +924,59 @@ try {
                 <div class="card">
                     <div class="module-header">
                         <div>
-                            <h2 class="module-title">Clientes Registados</h2>
-                            <p class="module-subtitle"><?php echo count($clientesList); ?> cliente(s) no cadastro.</p>
+                            <h2 class="module-title">Clientes Cadastrados</h2>
+                            <p class="module-subtitle">
+                                <?php echo count($clientesList); ?> cliente(s)
+                                <?php echo $isReturnToOS ? 'disponíveis para abertura de OS.' : 'no cadastro.'; ?>
+                            </p>
                         </div>
-                        <a href="index.php?page=clientes&action=create" class="btn btn-primary">
-                            Registar Novo Cliente
-                        </a>
+                        <div class="action-group">
+                            <?php if ($isReturnToOS): ?>
+                                <a href="index.php?page=os&action=create" class="btn btn-secondary">Voltar para OS</a>
+                            <?php endif; ?>
+                            <a href="index.php?page=clientes&action=create<?php echo $returnQuery; ?>" class="btn btn-primary">
+                                Cadastrar Novo Cliente
+                            </a>
+                        </div>
                     </div>
 
                     <?php if (empty($clientesList)): ?>
-                        <p style="color: var(--text-muted); font-size: 14px;">Nenhum cliente registado no sistema.</p>
+                        <form method="GET" action="index.php" class="form-section" style="margin-top: 0; margin-bottom: 18px;">
+                            <input type="hidden" name="page" value="clientes">
+                            <?php if ($isReturnToOS): ?>
+                                <input type="hidden" name="return" value="os">
+                            <?php endif; ?>
+                            <div class="form-grid form-grid-2">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="q" class="form-label">Procurar Cliente</label>
+                                    <input type="text" id="q" name="q" class="form-control" value="<?php echo htmlspecialchars($searchTerm); ?>" placeholder="Nome, CPF, CNPJ, telefone ou código">
+                                </div>
+                                <div style="display: flex; gap: 10px; align-items: flex-end;">
+                                    <button type="submit" class="btn btn-primary">Procurar</button>
+                                    <a href="index.php?page=clientes<?php echo $returnQuery; ?>" class="btn btn-secondary">Limpar</a>
+                                </div>
+                            </div>
+                        </form>
+                        <p style="color: var(--text-muted); font-size: 14px;">
+                            <?php echo $searchTerm !== '' ? 'Nenhum cliente encontrado para a busca informada.' : 'Nenhum cliente cadastrado no sistema.'; ?>
+                        </p>
                     <?php else: ?>
+                        <form method="GET" action="index.php" class="form-section" style="margin-top: 0; margin-bottom: 18px;">
+                            <input type="hidden" name="page" value="clientes">
+                            <?php if ($isReturnToOS): ?>
+                                <input type="hidden" name="return" value="os">
+                            <?php endif; ?>
+                            <div class="form-grid form-grid-2">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="q" class="form-label">Procurar Cliente</label>
+                                    <input type="text" id="q" name="q" class="form-control" value="<?php echo htmlspecialchars($searchTerm); ?>" placeholder="Nome, CPF, CNPJ, telefone ou código">
+                                </div>
+                                <div style="display: flex; gap: 10px; align-items: flex-end;">
+                                    <button type="submit" class="btn btn-primary">Procurar</button>
+                                    <a href="index.php?page=clientes<?php echo $returnQuery; ?>" class="btn btn-secondary">Limpar</a>
+                                </div>
+                            </div>
+                        </form>
                         <div class="table-responsive">
                             <table class="table">
                                 <thead>
@@ -792,7 +1029,15 @@ try {
                                             </td>
                                             <td style="text-align: right;">
                                                 <div class="action-group">
-                                                <a href="index.php?page=clientes&action=edit&id=<?php echo $cli['id_pessoa']; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px;">
+                                                <?php if ($isReturnToOS && $cli['status'] == 1): ?>
+                                                    <a href="index.php?page=os&action=create&id_cliente=<?php echo $cli['id_pessoa']; ?>" class="btn btn-primary" style="padding: 4px 10px; font-size: 12px;">
+                                                        Usar na OS
+                                                    </a>
+                                                <?php endif; ?>
+                                                <a href="index.php?page=clientes&action=view&id=<?php echo $cli['id_pessoa']; ?><?php echo $returnQuery; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px;">
+                                                    Visualizar
+                                                </a>
+                                                <a href="index.php?page=clientes&action=edit&id=<?php echo $cli['id_pessoa']; ?><?php echo $returnQuery; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px;">
                                                     Editar
                                                 </a>
                                                 

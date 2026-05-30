@@ -529,6 +529,10 @@ html[data-theme="light"] .main-content {
     align-items: start;
 }
 
+.print-header {
+    display: none;
+}
+
 /* Botões Modernos */
 .btn {
     display: inline-flex;
@@ -792,5 +796,141 @@ code {
     .equipment-layout {
         grid-template-columns: 1fr;
         gap: 18px;
+    }
+}
+
+@media print {
+    @page {
+        size: A4;
+        margin: 8mm;
+    }
+
+    body {
+        background: #ffffff !important;
+        color: #111827 !important;
+        font-size: 10px !important;
+    }
+
+    .sidebar,
+    .top-header,
+    .no-print,
+    #custom-alert-container,
+    #custom-confirm-modal {
+        display: none !important;
+    }
+
+    .layout-wrapper,
+    .main-content,
+    .page-container {
+        display: block !important;
+        height: auto !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+    }
+
+    .printable-card,
+    .card,
+    .form-section {
+        box-shadow: none !important;
+        background: #ffffff !important;
+        border-color: #d1d5db !important;
+        color: #111827 !important;
+    }
+
+    .printable-card {
+        border: 0 !important;
+        padding: 0 !important;
+    }
+
+    .printable-card .form-section {
+        border-radius: 0 !important;
+        margin-top: 6px !important;
+        padding: 6px 8px !important;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    .printable-card .form-grid,
+    .printable-card .form-grid-2,
+    .printable-card .form-grid-3,
+    .printable-card .form-grid-wide,
+    .printable-card .address-grid {
+        display: grid !important;
+        gap: 4px 10px !important;
+    }
+
+    .printable-card .form-grid-2,
+    .printable-card .form-grid-wide,
+    .printable-card .address-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .printable-card .form-grid-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+
+    .printable-card .form-section-title {
+        font-size: 9px !important;
+        margin-bottom: 5px !important;
+        color: #111827 !important;
+        border-bottom: 1px solid #d1d5db;
+        padding-bottom: 2px;
+    }
+
+    .print-header {
+        display: block;
+        margin-bottom: 8px;
+        border-bottom: 2px solid #111827;
+        padding-bottom: 5px;
+    }
+
+    .print-header h1 {
+        font-size: 16px;
+        margin: 0 0 2px;
+    }
+
+    .print-header p {
+        font-size: 9px;
+        margin: 0;
+    }
+
+    .table-primary-text {
+        font-size: 10px !important;
+        line-height: 1.25 !important;
+    }
+
+    .print-header p,
+    .table-muted-text,
+    .module-subtitle {
+        color: #4b5563 !important;
+        font-size: 8px !important;
+        line-height: 1.2 !important;
+    }
+
+    .table,
+    .table th,
+    .table td {
+        color: #111827 !important;
+        border-color: #d1d5db !important;
+    }
+
+    .table th,
+    .table td {
+        padding: 4px 5px !important;
+        font-size: 8.5px !important;
+    }
+
+    .badge,
+    code {
+        border: 0 !important;
+        background: transparent !important;
+        color: #111827 !important;
+        padding: 0 !important;
+    }
+
+    .printable-card p {
+        font-size: 9px !important;
+        line-height: 1.25 !important;
     }
 }
