@@ -77,6 +77,73 @@ if (!function_exists('isWithdrawalStatus')) {
     }
 }
 
+if (!function_exists('isBillingStatus')) {
+    function isBillingStatus(string $status): bool {
+        return in_array($status, ['reparo_concluido', 'pronto_para_retirada', 'sem_conserto', 'entregue'], true);
+    }
+}
+
+if (!function_exists('syncContaReceberOS')) {
+    function syncContaReceberOS(PDO $pdo, int $idOs, int $idCliente, float $valorTotal, string $status, ?int $idUsuario): void {
+        if (!isBillingStatus($status) || $valorTotal <= 0) {
+            return;
+        }
+
+        $stmtConta = $pdo->prepare("SELECT id_conta, status FROM conta_receber WHERE id_os = :id_os LIMIT 1");
+        $stmtConta->execute([':id_os' => $idOs]);
+        $conta = $stmtConta->fetch();
+
+        if ($conta && $conta['status'] !== 'ABERTA') {
+            return;
+        }
+
+        $stmtCategoria = $pdo->query("SELECT id_categoria FROM financeiro_categoria WHERE ativo = 1 AND tipo IN ('ENTRADA', 'AMBOS') ORDER BY id_categoria ASC LIMIT 1");
+        $idCategoria = $stmtCategoria->fetchColumn() ?: null;
+
+        $descricao = 'OS #' . $idOs . ' - Ordem de Serviço';
+        $dataHoje = date('Y-m-d');
+
+        if ($conta) {
+            $stmtUpdate = $pdo->prepare("
+                UPDATE conta_receber SET
+                    id_categoria = :id_categoria,
+                    id_cliente = :id_cliente,
+                    descricao = :descricao,
+                    data_vencimento = :data_vencimento,
+                    valor = :valor,
+                    id_usuario = :id_usuario
+                WHERE id_conta = :id_conta AND status = 'ABERTA'
+            ");
+            $stmtUpdate->execute([
+                ':id_categoria' => $idCategoria,
+                ':id_cliente' => $idCliente,
+                ':descricao' => $descricao,
+                ':data_vencimento' => $dataHoje,
+                ':valor' => $valorTotal,
+                ':id_usuario' => $idUsuario,
+                ':id_conta' => (int)$conta['id_conta'],
+            ]);
+            return;
+        }
+
+        $stmtInsert = $pdo->prepare("
+            INSERT INTO conta_receber (id_categoria, id_cliente, id_os, descricao, data_emissao, data_vencimento, valor, forma_recebimento, observacoes, id_usuario)
+            VALUES (:id_categoria, :id_cliente, :id_os, :descricao, :data_emissao, :data_vencimento, :valor, NULL, :observacoes, :id_usuario)
+        ");
+        $stmtInsert->execute([
+            ':id_categoria' => $idCategoria,
+            ':id_cliente' => $idCliente,
+            ':id_os' => $idOs,
+            ':descricao' => $descricao,
+            ':data_emissao' => $dataHoje,
+            ':data_vencimento' => $dataHoje,
+            ':valor' => $valorTotal,
+            ':observacoes' => 'Gerado automaticamente pela OS.',
+            ':id_usuario' => $idUsuario,
+        ]);
+    }
+}
+
 // Retorna o elemento HTML do badge estilizado de acordo com o novo fluxo de progresso
 if (!function_exists('getStatusBadge')) {
     function getStatusBadge($status): string {
@@ -153,7 +220,7 @@ if ($action === 'create') {
 // ==========================================================================
 // Processamento de Ações do Formulário (POST)
 // ==========================================================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $formAction = $_POST['form_action'] ?? '';
 
     // Coleta dos dados gerais da OS
@@ -342,6 +409,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':id'      => $id_os
             ]);
 
+            syncContaReceberOS($pdo, (int)$id_os, (int)$id_cliente, (float)$totalOS, (string)$status, $_SESSION['user_id'] ?? null);
+
             $pdo->commit();
             $message = 'Ordem de Serviço guardada com sucesso!';
             $messageType = 'success';
@@ -469,6 +538,7 @@ try {
     // 5. Listagem Geral de Ordens de Serviço (Junções Completas)
     $sqlOS = "
         SELECT o.id_os, o.data_abertura, o.updated_at, o.status, o.valor_total,
+               cr.id_conta AS id_conta_receber, cr.status AS financeiro_status,
                pCli.nome AS cliente_nome, 
                e.aparelho, e.marca, 
                pTec.nome AS tecnico_nome 
@@ -478,6 +548,7 @@ try {
         INNER JOIN equipamento e ON o.id_equipamento = e.id_equipamento
         INNER JOIN funcionario f ON o.id_tecnico = f.id_pessoa
         INNER JOIN pessoa pTec ON f.id_pessoa = pTec.id_pessoa
+        LEFT JOIN conta_receber cr ON cr.id_os = o.id_os
         ORDER BY o.id_os DESC
     ";
     $osList = $pdo->query($sqlOS)->fetchAll();
@@ -986,8 +1057,9 @@ try {
                                     <th>Aparelho / Item</th>
                                     <th>Técnico Responsável</th>
                                     <th>Status</th>
+                                    <th>Financeiro</th>
                                     <th>Valor Total</th>
-                                    <th style="width: 280px; text-align: right;">Ações</th>
+                                    <th style="width: 340px; text-align: right;">Ações</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1020,6 +1092,21 @@ try {
                                             <?php endif; ?>
                                         </td>
                                         <td>
+                                            <?php if (!empty($os['id_conta_receber'])): ?>
+                                                <?php if ($os['financeiro_status'] === 'RECEBIDA'): ?>
+                                                    <span class="badge badge-finalizada">Recebida</span>
+                                                <?php elseif ($os['financeiro_status'] === 'CANCELADA'): ?>
+                                                    <span class="badge badge-cancelada">Cancelada</span>
+                                                <?php else: ?>
+                                                    <span class="badge" style="background-color: var(--warning-bg); color: var(--warning);">A receber</span>
+                                                <?php endif; ?>
+                                            <?php elseif (isBillingStatus($os['status']) && (float)$os['valor_total'] > 0): ?>
+                                                <span class="badge" style="background-color: var(--warning-bg); color: var(--warning);">Pendente</span>
+                                            <?php else: ?>
+                                                <span class="table-muted-text">Sem cobrança</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
                                             <strong style="color: var(--success); font-size: 14.5px;">
                                                 <?php echo htmlspecialchars($currencySymbol) . ' ' . formatDecimalOS($os['valor_total']); ?>
                                             </strong>
@@ -1038,6 +1125,11 @@ try {
                                             <a href="index.php?page=historico_os&id=<?php echo $os['id_os']; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px; background-color: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59, 130, 246, 0.2);">
                                                 Histórico
                                             </a>
+                                            <?php if (!empty($os['id_conta_receber'])): ?>
+                                                <a href="index.php?page=contas_receber&action=edit&id=<?php echo (int)$os['id_conta_receber']; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px; background-color: rgba(245, 158, 11, 0.1); color: #f59e0b; border-color: rgba(245, 158, 11, 0.2);">
+                                                    Cobrança
+                                                </a>
+                                            <?php endif; ?>
                                             <a href="index.php?page=os&action=edit&id=<?php echo $os['id_os']; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px;">
                                                 Editar / Orçar
                                             </a>

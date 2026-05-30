@@ -407,8 +407,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (logoUpload) {
         logoUpload.addEventListener('change', function() {
-            const file = this.files; // Corrigido de "this.files" para "this.files" para garantir a leitura do ficheiro
+            const file = this.files && this.files[0] ? this.files[0] : null;
             if (file) {
+                if (!file.type.startsWith('image/')) {
+                    mostrarNotificacaoErro('Selecione um arquivo de imagem válido.');
+                    this.value = '';
+                    return;
+                }
                 // Validação básica de tamanho no front-end (2MB)
                 if (file.size > 2 * 1024 * 1024) {
                     mostrarNotificacaoErro('O arquivo selecionado excede o limite máximo de 2MB.');
@@ -426,10 +431,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         logoPlaceholder.style.display = 'none';
                     }
                     
-                    // Submete o formulário de forma autónoma para salvar as configurações e atualizar a página
-                    if (form) {
-                        form.submit();
-                    }
                 }
                 reader.readAsDataURL(file);
             }

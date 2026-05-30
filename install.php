@@ -47,6 +47,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $sqlQueries = [
             // Drop Tables se existirem (para reinstalação limpa se necessário)
             "DROP TABLE IF EXISTS `usuario`;",
+            "DROP TABLE IF EXISTS `caixa_movimento`;",
+            "DROP TABLE IF EXISTS `conta_receber`;",
+            "DROP TABLE IF EXISTS `conta_pagar`;",
+            "DROP TABLE IF EXISTS `financeiro_categoria`;",
             "DROP TABLE IF EXISTS `item_os`;",
             "DROP TABLE IF EXISTS `historico_os`;",
             "DROP TABLE IF EXISTS `folha_pagto`;",
@@ -262,6 +266,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               PRIMARY KEY (`id_pessoa`),
               UNIQUE KEY `login` (`login`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
+
+            // Tabela: financeiro_categoria
+            "CREATE TABLE `financeiro_categoria` (
+              `id_categoria` int(11) NOT NULL AUTO_INCREMENT,
+              `nome` varchar(80) NOT NULL,
+              `tipo` enum('ENTRADA','SAIDA','AMBOS') NOT NULL DEFAULT 'AMBOS',
+              `ativo` tinyint(1) DEFAULT 1,
+              PRIMARY KEY (`id_categoria`),
+              UNIQUE KEY `uk_financeiro_categoria_nome` (`nome`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
+
+            // Tabela: conta_pagar
+            "CREATE TABLE `conta_pagar` (
+              `id_conta` int(11) NOT NULL AUTO_INCREMENT,
+              `id_categoria` int(11) DEFAULT NULL,
+              `descricao` varchar(160) NOT NULL,
+              `fornecedor` varchar(120) DEFAULT NULL,
+              `data_emissao` date DEFAULT NULL,
+              `data_vencimento` date NOT NULL,
+              `valor` decimal(10,2) NOT NULL DEFAULT 0.00,
+              `forma_pagamento` varchar(40) DEFAULT NULL,
+              `status` enum('ABERTA','PAGA','CANCELADA') NOT NULL DEFAULT 'ABERTA',
+              `data_pagamento` date DEFAULT NULL,
+              `observacoes` text DEFAULT NULL,
+              `id_usuario` int(11) DEFAULT NULL,
+              `created_at` datetime DEFAULT current_timestamp(),
+              `updated_at` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+              PRIMARY KEY (`id_conta`),
+              KEY `fk_conta_pagar_categoria` (`id_categoria`),
+              KEY `fk_conta_pagar_usuario` (`id_usuario`),
+              KEY `idx_conta_pagar_vencimento` (`data_vencimento`, `status`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
+
+            // Tabela: conta_receber
+            "CREATE TABLE `conta_receber` (
+              `id_conta` int(11) NOT NULL AUTO_INCREMENT,
+              `id_categoria` int(11) DEFAULT NULL,
+              `id_cliente` int(11) DEFAULT NULL,
+              `id_os` int(11) DEFAULT NULL,
+              `descricao` varchar(160) NOT NULL,
+              `data_emissao` date DEFAULT NULL,
+              `data_vencimento` date NOT NULL,
+              `valor` decimal(10,2) NOT NULL DEFAULT 0.00,
+              `forma_recebimento` varchar(40) DEFAULT NULL,
+              `status` enum('ABERTA','RECEBIDA','CANCELADA') NOT NULL DEFAULT 'ABERTA',
+              `data_recebimento` date DEFAULT NULL,
+              `observacoes` text DEFAULT NULL,
+              `id_usuario` int(11) DEFAULT NULL,
+              `created_at` datetime DEFAULT current_timestamp(),
+              `updated_at` datetime DEFAULT NULL ON UPDATE current_timestamp(),
+              PRIMARY KEY (`id_conta`),
+              KEY `fk_conta_receber_categoria` (`id_categoria`),
+              KEY `fk_conta_receber_cliente` (`id_cliente`),
+              KEY `fk_conta_receber_os` (`id_os`),
+              KEY `fk_conta_receber_usuario` (`id_usuario`),
+              KEY `idx_conta_receber_vencimento` (`data_vencimento`, `status`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
+
+            // Tabela: caixa_movimento
+            "CREATE TABLE `caixa_movimento` (
+              `id_movimento` int(11) NOT NULL AUTO_INCREMENT,
+              `tipo` enum('ENTRADA','SAIDA') NOT NULL,
+              `id_categoria` int(11) DEFAULT NULL,
+              `descricao` varchar(160) NOT NULL,
+              `valor` decimal(10,2) NOT NULL DEFAULT 0.00,
+              `data_movimento` date NOT NULL,
+              `forma_pagamento` varchar(40) DEFAULT NULL,
+              `origem` enum('MANUAL','CONTA_PAGAR','CONTA_RECEBER','OS','FOLHA') NOT NULL DEFAULT 'MANUAL',
+              `id_conta_pagar` int(11) DEFAULT NULL,
+              `id_conta_receber` int(11) DEFAULT NULL,
+              `id_os` int(11) DEFAULT NULL,
+              `id_usuario` int(11) DEFAULT NULL,
+              `observacoes` text DEFAULT NULL,
+              `created_at` datetime DEFAULT current_timestamp(),
+              PRIMARY KEY (`id_movimento`),
+              KEY `fk_caixa_categoria` (`id_categoria`),
+              KEY `fk_caixa_conta_pagar` (`id_conta_pagar`),
+              KEY `fk_caixa_conta_receber` (`id_conta_receber`),
+              KEY `fk_caixa_os` (`id_os`),
+              KEY `fk_caixa_usuario` (`id_usuario`),
+              KEY `idx_caixa_data_tipo` (`data_movimento`, `tipo`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
             
             // Adicionar restrições de Foreign Key (Chaves Estrangeiras)
             "ALTER TABLE `cidade` ADD CONSTRAINT `fk_cidade_estado` FOREIGN KEY (`id_estado`) REFERENCES `estado` (`id_estado`);",
@@ -274,7 +360,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             "ALTER TABLE `item_os` ADD CONSTRAINT `fk_item_os` FOREIGN KEY (`id_os`) REFERENCES `os` (`id_os`) ON DELETE CASCADE, ADD CONSTRAINT `fk_item_produto` FOREIGN KEY (`id_produto`) REFERENCES `produto` (`id_produto`);",
             "ALTER TABLE `os` ADD CONSTRAINT `fk_os_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `cliente` (`id_pessoa`), ADD CONSTRAINT `fk_os_equipamento` FOREIGN KEY (`id_equipamento`) REFERENCES `equipamento` (`id_equipamento`), ADD CONSTRAINT `fk_os_tecnico` FOREIGN KEY (`id_tecnico`) REFERENCES `funcionario` (`id_pessoa`);",
             "ALTER TABLE `pessoa` ADD CONSTRAINT `fk_pessoa_cidade` FOREIGN KEY (`id_cidade`) REFERENCES `cidade` (`id_cidade`);",
-            "ALTER TABLE `usuario` ADD CONSTRAINT `fk_usuario_pessoa` FOREIGN KEY (`id_pessoa`) REFERENCES `pessoa` (`id_pessoa`) ON DELETE CASCADE;"
+            "ALTER TABLE `usuario` ADD CONSTRAINT `fk_usuario_pessoa` FOREIGN KEY (`id_pessoa`) REFERENCES `pessoa` (`id_pessoa`) ON DELETE CASCADE;",
+            "ALTER TABLE `conta_pagar` ADD CONSTRAINT `fk_conta_pagar_categoria` FOREIGN KEY (`id_categoria`) REFERENCES `financeiro_categoria` (`id_categoria`), ADD CONSTRAINT `fk_conta_pagar_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_pessoa`);",
+            "ALTER TABLE `conta_receber` ADD CONSTRAINT `fk_conta_receber_categoria` FOREIGN KEY (`id_categoria`) REFERENCES `financeiro_categoria` (`id_categoria`), ADD CONSTRAINT `fk_conta_receber_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `cliente` (`id_pessoa`), ADD CONSTRAINT `fk_conta_receber_os` FOREIGN KEY (`id_os`) REFERENCES `os` (`id_os`), ADD CONSTRAINT `fk_conta_receber_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_pessoa`);",
+            "ALTER TABLE `caixa_movimento` ADD CONSTRAINT `fk_caixa_categoria` FOREIGN KEY (`id_categoria`) REFERENCES `financeiro_categoria` (`id_categoria`), ADD CONSTRAINT `fk_caixa_conta_pagar` FOREIGN KEY (`id_conta_pagar`) REFERENCES `conta_pagar` (`id_conta`), ADD CONSTRAINT `fk_caixa_conta_receber` FOREIGN KEY (`id_conta_receber`) REFERENCES `conta_receber` (`id_conta`), ADD CONSTRAINT `fk_caixa_os` FOREIGN KEY (`id_os`) REFERENCES `os` (`id_os`), ADD CONSTRAINT `fk_caixa_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_pessoa`);"
         ];
 
         // Executar todas as estruturas de base de dados
@@ -370,6 +459,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             VALUES (1, 'OS Master Assistência', 'OS Master Soluções em Tecnologia LTDA', '00.000.000/0001-00', '(67) 3411-0000', 'contacto@osmaster.com', 'Av. Presidente Vargas, 1200 - Dourados/MS', 'Autorizo a realização de testes e diagnósticos necessários no meu equipamento. O prazo limite para levantamento do aparelho após notificação do término do serviço é de 90 dias, findo o qual o aparelho será considerado abandonado nos termos da legislação civil vigente.', 'R$', 90)
             ON DUPLICATE KEY UPDATE `id_config`=1;");
         $stmtConfig->execute();
+
+        // 4.7. Categorias financeiras iniciais
+        $decodeTexto = function (string $texto): string {
+            return json_decode('"' . $texto . '"');
+        };
+
+        $categoriasFinanceiras = [
+            [$decodeTexto('Servi\u00e7os'), 'ENTRADA'],
+            [$decodeTexto('Pe\u00e7as e Produtos'), 'ENTRADA'],
+            [$decodeTexto('Aluguel do im\u00f3vel'), 'SAIDA'],
+            [$decodeTexto('Energia el\u00e9trica'), 'SAIDA'],
+            [$decodeTexto('\u00c1gua'), 'SAIDA'],
+            ['Internet', 'SAIDA'],
+            ['Telefone', 'SAIDA'],
+            [$decodeTexto('Fornecedor de pe\u00e7as'), 'SAIDA'],
+            [$decodeTexto('Sal\u00e1rios'), 'SAIDA'],
+            [$decodeTexto('Comiss\u00f5es'), 'SAIDA'],
+            ['Impostos', 'SAIDA'],
+            ['Material de consumo', 'SAIDA'],
+            [$decodeTexto('Manuten\u00e7\u00e3o'), 'SAIDA'],
+            ['Outras despesas', 'SAIDA'],
+            ['Outras receitas', 'ENTRADA'],
+        ];
+
+        $stmtCategoria = $pdoInit->prepare("
+            INSERT INTO `financeiro_categoria` (`nome`, `tipo`, `ativo`)
+            VALUES (:nome, :tipo, 1)
+            ON DUPLICATE KEY UPDATE `tipo` = VALUES(`tipo`), `ativo` = 1;
+        ");
+
+        foreach ($categoriasFinanceiras as [$nomeCategoria, $tipoCategoria]) {
+            $stmtCategoria->execute([
+                ':nome' => $nomeCategoria,
+                ':tipo' => $tipoCategoria,
+            ]);
+        }
 
         $installationSuccess = true;
 

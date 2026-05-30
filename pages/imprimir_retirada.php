@@ -253,8 +253,17 @@ $statusOficiais = [
     }
 </style>
 
-<!-- Botão de controlo manual (oculto na impressão) -->
-<button class="btn-print no-print" onclick="window.print();">🖨️ Imprimir Termo de Retirada</button>
+<!-- Painel de controle de impressão (oculto na impressão) -->
+<div class="no-print" style="max-width: 800px; margin: 20px auto; background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 16px; display: flex; justify-content: space-between; align-items: center; font-family: sans-serif;">
+    <div>
+        <strong style="color: #1e293b; font-size: 14px; display: block; margin-bottom: 2px;">Visualização de Impressão</strong>
+        <span style="font-size: 11.5px; color: #64748b;">Termo de retirada formatado para impressão e assinatura do cliente.</span>
+    </div>
+    <div style="display: flex; gap: 8px;">
+        <a href="index.php?page=os" style="background-color: #64748b; color: white; text-decoration: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; font-size: 12.5px; display: inline-block;">← Voltar</a>
+        <button onclick="window.print();" style="background-color: #22c55e; color: white; border: none; padding: 8px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12.5px; display: inline-block;">🖨️ Imprimir Termo</button>
+    </div>
+</div>
 
 <div class="print-sheet">
     
