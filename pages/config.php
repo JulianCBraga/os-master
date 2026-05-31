@@ -53,6 +53,7 @@ try {
             'endereco_completo'       => 'Av. Presidente Vargas, 1200 - Centro',
             'logo_caminho'            => null,
             'termo_compromisso_texto' => 'Termos de teste da ordem de serviço.',
+            'termo_retirada_texto'    => 'Declaro que retirei o equipamento descrito neste termo, conferi seu estado de entrega e estou ciente do parecer técnico informado. A garantia cobre apenas o serviço e as peças descritas na OS e perde validade em caso de mau uso, queda, líquidos, violação de lacres ou intervenção de terceiros.',
             'prazo_maximo_retirada'   => 90,
             'moeda'                   => 'R$'
         ];
@@ -75,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email                   = trim(filter_input(INPUT_POST, 'email', FILTER_VALIDATE_EMAIL));
         $endereco_completo       = trim(filter_input(INPUT_POST, 'endereco_completo', FILTER_DEFAULT));
         $termo_compromisso_texto = trim(filter_input(INPUT_POST, 'termo_compromisso_texto', FILTER_DEFAULT));
+        $termo_retirada_texto    = trim(filter_input(INPUT_POST, 'termo_retirada_texto', FILTER_DEFAULT));
         $prazo_maximo_retirada   = filter_input(INPUT_POST, 'prazo_maximo_retirada', FILTER_VALIDATE_INT);
         $moeda                   = trim(filter_input(INPUT_POST, 'moeda', FILTER_DEFAULT)) ?: 'R$';
         $logo_caminho            = $configData['logo_caminho'] ?? null;
@@ -135,6 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 email = :email, 
                                 endereco_completo = :endereco_completo, 
                                 termo_compromisso_texto = :termo_compromisso_texto, 
+                                termo_retirada_texto = :termo_retirada_texto,
                                 prazo_maximo_retirada = :prazo_maximo_retirada,
                                 moeda = :moeda,
                                 logo_caminho = :logo_caminho
@@ -149,6 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':email'                   => $email,
                     ':endereco_completo'       => $endereco_completo,
                     ':termo_compromisso_texto' => $termo_compromisso_texto,
+                    ':termo_retirada_texto'    => $termo_retirada_texto,
                     ':prazo_maximo_retirada'   => $prazo_maximo_retirada,
                     ':moeda'                   => $moeda,
                     ':logo_caminho'            => $logo_caminho
@@ -264,6 +268,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-group">
                     <label for="termo_compromisso_texto" class="form-label">Texto do Termo de Responsabilidade e Consentimento</label>
                     <textarea id="termo_compromisso_texto" name="termo_compromisso_texto" class="form-control" placeholder="Insira o texto legal que será impresso no comprovativo de entrada da Ordem de Serviço..." style="height: 140px; resize: none; line-height: 1.6; font-size: 13.5px;"><?php echo htmlspecialchars($configData['termo_compromisso_texto'] ?? ''); ?></textarea>
+                </div>
+
+                <h3 style="font-size: 14px; text-transform: uppercase; color: var(--primary); margin-top: 32px; margin-bottom: 16px;">4. Termo de Retirada</h3>
+
+                <div class="form-group">
+                    <label for="termo_retirada_texto" class="form-label">Texto da Declaração de Retirada</label>
+                    <textarea id="termo_retirada_texto" name="termo_retirada_texto" class="form-control" placeholder="Insira o texto legal que será impresso no termo de retirada..." style="height: 110px; resize: none; line-height: 1.5; font-size: 13.5px;"><?php echo htmlspecialchars($configData['termo_retirada_texto'] ?? ''); ?></textarea>
                 </div>
 
                 <div style="display: flex; gap: 12px; margin-top: 32px; justify-content: flex-end; border-top: 1px solid var(--border-color); padding-top: 24px;">

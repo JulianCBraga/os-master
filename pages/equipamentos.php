@@ -31,6 +31,10 @@ $returnTo = $_GET['return'] ?? '';
 $returnClienteId = filter_input(INPUT_GET, 'id_cliente', FILTER_VALIDATE_INT);
 $isReturnToOS = ($returnTo === 'os');
 $searchTerm = trim(filter_input(INPUT_GET, 'q', FILTER_DEFAULT) ?? '');
+$returnQuery = $isReturnToOS ? '&return=os' . ($returnClienteId ? '&id_cliente=' . $returnClienteId : '') : '';
+$equipamentoProprietarios = [];
+$equipamentoOsRecentes = [];
+$equipamentoAnexos = [];
 
 // Instância de dados padrão para o formulário
 $editData = [
@@ -194,20 +198,152 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+
+    // 3. AÇÃO: ANEXAR FOTO AO EQUIPAMENTO
+    if ($formAction === 'upload_anexo' && $editId) {
+        $action = 'edit';
+        $descricaoAnexo = trim(filter_input(INPUT_POST, 'descricao_anexo', FILTER_DEFAULT) ?? '');
+
+        try {
+            if (!isset($_FILES['foto_anexo']) || $_FILES['foto_anexo']['error'] !== UPLOAD_ERR_OK) {
+                throw new RuntimeException('Selecione uma foto válida para anexar ao equipamento.');
+            }
+
+            $fileTmpPath = $_FILES['foto_anexo']['tmp_name'];
+            $fileName = $_FILES['foto_anexo']['name'];
+            $fileSize = (int)$_FILES['foto_anexo']['size'];
+            $fileMime = $_FILES['foto_anexo']['type'] ?? null;
+            $fileExtension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+            $allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+
+            if (!in_array($fileExtension, $allowedExtensions, true)) {
+                throw new RuntimeException('Formato não suportado. Use JPG, PNG, WEBP ou GIF.');
+            }
+
+            if ($fileSize > 5 * 1024 * 1024) {
+                throw new RuntimeException('A foto excede o limite de 5MB.');
+            }
+
+            $uploadFileDir = BASE_PATH . '/uploads/equipamentos/';
+            if (!is_dir($uploadFileDir)) {
+                mkdir($uploadFileDir, 0755, true);
+            }
+
+            $newFileName = 'equip_' . (int)$editId . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $fileExtension;
+            $destPath = $uploadFileDir . $newFileName;
+
+            if (!move_uploaded_file($fileTmpPath, $destPath)) {
+                throw new RuntimeException('Não foi possível gravar a foto enviada.');
+            }
+
+            $stmtAnexo = $pdo->prepare("
+                INSERT INTO equipamento_anexo (id_equipamento, caminho, nome_original, tipo_mime, tamanho, descricao)
+                VALUES (:id_equipamento, :caminho, :nome_original, :tipo_mime, :tamanho, :descricao)
+            ");
+            $stmtAnexo->execute([
+                ':id_equipamento' => $editId,
+                ':caminho' => 'uploads/equipamentos/' . $newFileName,
+                ':nome_original' => $fileName,
+                ':tipo_mime' => $fileMime,
+                ':tamanho' => $fileSize,
+                ':descricao' => $descricaoAnexo ?: null
+            ]);
+
+            $message = 'Foto anexada ao equipamento com sucesso!';
+            $messageType = 'success';
+        } catch (Exception $e) {
+            $message = $e->getMessage();
+            $messageType = 'danger';
+        }
+    }
 }
 
 // ==========================================================================
 // Processamento de Ações de URL (GET)
 // ==========================================================================
-// 1. CARREGAR DADOS PARA EDIÇÃO
-if ($action === 'edit' && $editId) {
+if ($action === 'delete_anexo' && $editId) {
+    $idAnexo = filter_input(INPUT_GET, 'id_anexo', FILTER_VALIDATE_INT);
     try {
-        $stmtEdit = $pdo->prepare("SELECT * FROM equipamento WHERE id_equipamento = :id LIMIT 1");
+        if (!$idAnexo) {
+            throw new RuntimeException('Anexo inválido.');
+        }
+
+        $stmtAnexo = $pdo->prepare("SELECT caminho FROM equipamento_anexo WHERE id_anexo = :id_anexo AND id_equipamento = :id_equipamento LIMIT 1");
+        $stmtAnexo->execute([
+            ':id_anexo' => $idAnexo,
+            ':id_equipamento' => $editId
+        ]);
+        $anexo = $stmtAnexo->fetch();
+
+        if (!$anexo) {
+            throw new RuntimeException('Anexo não encontrado.');
+        }
+
+        $stmtDeleteAnexo = $pdo->prepare("DELETE FROM equipamento_anexo WHERE id_anexo = :id_anexo AND id_equipamento = :id_equipamento");
+        $stmtDeleteAnexo->execute([
+            ':id_anexo' => $idAnexo,
+            ':id_equipamento' => $editId
+        ]);
+
+        if (!empty($anexo['caminho']) && file_exists(BASE_PATH . '/' . $anexo['caminho'])) {
+            @unlink(BASE_PATH . '/' . $anexo['caminho']);
+        }
+
+        $message = 'Foto removida do equipamento.';
+        $messageType = 'success';
+    } catch (Exception $e) {
+        $message = $e->getMessage();
+        $messageType = 'danger';
+    }
+    $action = 'edit';
+}
+
+// 1. CARREGAR DADOS PARA EDIÇÃO
+if (($action === 'edit' || $action === 'view') && $editId) {
+    try {
+        $stmtEdit = $pdo->prepare("
+            SELECT e.*, p.nome AS cliente_nome, p.cpf_cnpj, p.telefone, p.status AS cliente_status
+            FROM equipamento e
+            INNER JOIN pessoa p ON e.id_cliente = p.id_pessoa
+            WHERE e.id_equipamento = :id
+            LIMIT 1
+        ");
         $stmtEdit->execute([':id' => $editId]);
         $data = $stmtEdit->fetch();
         
         if ($data) {
             $editData = $data;
+            $stmtAnexos = $pdo->prepare("
+                SELECT *
+                FROM equipamento_anexo
+                WHERE id_equipamento = :id
+                ORDER BY created_at DESC, id_anexo DESC
+            ");
+            $stmtAnexos->execute([':id' => $editId]);
+            $equipamentoAnexos = $stmtAnexos->fetchAll();
+
+            if ($action === 'view') {
+                $stmtProprietarios = $pdo->prepare("
+                    SELECT ep.*, p.nome AS cliente_nome, p.cpf_cnpj
+                    FROM equipamento_proprietario ep
+                    INNER JOIN pessoa p ON ep.id_cliente = p.id_pessoa
+                    WHERE ep.id_equipamento = :id
+                    ORDER BY ep.data_inicio DESC
+                ");
+                $stmtProprietarios->execute([':id' => $editId]);
+                $equipamentoProprietarios = $stmtProprietarios->fetchAll();
+
+                $stmtOsRecentes = $pdo->prepare("
+                    SELECT o.id_os, o.data_abertura, o.status, o.valor_total, p.nome AS cliente_nome
+                    FROM os o
+                    INNER JOIN pessoa p ON o.id_cliente = p.id_pessoa
+                    WHERE o.id_equipamento = :id
+                    ORDER BY o.data_abertura DESC
+                    LIMIT 8
+                ");
+                $stmtOsRecentes->execute([':id' => $editId]);
+                $equipamentoOsRecentes = $stmtOsRecentes->fetchAll();
+            }
         } else {
             $message = 'Equipamento não encontrado.';
             $messageType = 'danger';
@@ -337,9 +473,169 @@ try {
             </div>
         </div>
 
-        <div class="equipment-layout">
+        <?php if ($action === 'view' && $editId): ?>
+            <div class="card printable-card">
+                <div class="module-header no-print">
+                    <div>
+                        <h2 class="module-title">Ficha do Equipamento #<?php echo htmlspecialchars($editId); ?></h2>
+                        <p class="module-subtitle">Visualização cadastral para consulta e impressão.</p>
+                    </div>
+                    <div class="action-group">
+                        <button type="button" class="btn btn-primary" onclick="window.print()">Imprimir Ficha</button>
+                        <?php if ($isReturnToOS): ?>
+                            <a href="index.php?page=os&action=create&id_cliente=<?php echo urlencode((string)$editData['id_cliente']); ?>&id_equipamento=<?php echo urlencode((string)$editId); ?>" class="btn btn-primary">Usar na OS</a>
+                        <?php endif; ?>
+                        <a href="index.php?page=equipamentos&action=edit&id=<?php echo $editId; ?><?php echo $returnQuery; ?>" class="btn btn-secondary">Editar</a>
+                        <a href="<?php echo $isReturnToOS ? 'index.php?page=equipamentos&return=os&action=create&id_cliente=' . urlencode((string)$editData['id_cliente']) : 'index.php?page=equipamentos'; ?>" class="btn btn-secondary">Voltar</a>
+                    </div>
+                </div>
+
+                <div class="print-header">
+                    <h1>Ficha do Equipamento</h1>
+                    <p>Cadastro #<?php echo htmlspecialchars($editId); ?> - <?php echo date('d/m/Y H:i'); ?></p>
+                </div>
+
+                <div class="form-section" style="margin-top: 0;">
+                    <h3 class="form-section-title">Identificação</h3>
+                    <div class="form-grid form-grid-3">
+                        <div>
+                            <div class="table-muted-text">Aparelho / Item</div>
+                            <div class="table-primary-text"><?php echo htmlspecialchars($editData['aparelho']); ?></div>
+                        </div>
+                        <div>
+                            <div class="table-muted-text">Marca</div>
+                            <div class="table-primary-text"><?php echo htmlspecialchars($editData['marca'] ?: 'Não informada'); ?></div>
+                        </div>
+                        <div>
+                            <div class="table-muted-text">Modelo</div>
+                            <div class="table-primary-text"><?php echo htmlspecialchars($editData['modelo'] ?: 'Não informado'); ?></div>
+                        </div>
+                        <div>
+                            <div class="table-muted-text">Número de Série</div>
+                            <div class="table-primary-text"><?php echo htmlspecialchars($editData['numero_serie'] ?: 'Não informado'); ?></div>
+                        </div>
+                        <div>
+                            <div class="table-muted-text">Cor / Identificação Visual</div>
+                            <div class="table-primary-text"><?php echo htmlspecialchars($editData['cor'] ?: 'Não informada'); ?></div>
+                        </div>
+                        <div>
+                            <div class="table-muted-text">Patrimônio / Etiqueta</div>
+                            <div class="table-primary-text"><?php echo htmlspecialchars($editData['patrimonio'] ?: 'Não informado'); ?></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3 class="form-section-title">Proprietário Atual</h3>
+                    <div class="form-grid form-grid-3">
+                        <div>
+                            <div class="table-muted-text">Cliente</div>
+                            <div class="table-primary-text"><?php echo htmlspecialchars($editData['cliente_nome'] ?? 'Não informado'); ?></div>
+                        </div>
+                        <div>
+                            <div class="table-muted-text">CPF / CNPJ</div>
+                            <div class="table-primary-text"><?php echo htmlspecialchars($editData['cpf_cnpj'] ?: 'Não informado'); ?></div>
+                        </div>
+                        <div>
+                            <div class="table-muted-text">Telefone</div>
+                            <div class="table-primary-text"><?php echo htmlspecialchars($editData['telefone'] ?: 'Não informado'); ?></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3 class="form-section-title">Histórico de Proprietários</h3>
+                    <?php if (empty($equipamentoProprietarios)): ?>
+                        <p style="color: var(--text-muted); font-size: 14px; margin: 0;">Nenhum histórico de propriedade registrado para este equipamento.</p>
+                    <?php else: ?>
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Cliente</th>
+                                        <th>Documento</th>
+                                        <th>Início</th>
+                                        <th>Fim</th>
+                                        <th>Observação</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($equipamentoProprietarios as $prop): ?>
+                                        <tr>
+                                            <td><?php echo htmlspecialchars($prop['cliente_nome']); ?></td>
+                                            <td><?php echo htmlspecialchars($prop['cpf_cnpj'] ?: 'Não informado'); ?></td>
+                                            <td><?php echo !empty($prop['data_inicio']) ? date('d/m/Y H:i', strtotime($prop['data_inicio'])) : 'Não informado'; ?></td>
+                                            <td><?php echo !empty($prop['data_fim']) ? date('d/m/Y H:i', strtotime($prop['data_fim'])) : 'Atual'; ?></td>
+                                            <td><?php echo htmlspecialchars($prop['observacao'] ?: 'Sem observação'); ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="form-section">
+                    <h3 class="form-section-title">Fotos e Anexos</h3>
+                    <?php if (empty($equipamentoAnexos)): ?>
+                        <p style="color: var(--text-muted); font-size: 14px; margin: 0;">Nenhuma foto anexada a este equipamento.</p>
+                    <?php else: ?>
+                        <div class="attachment-grid">
+                            <?php foreach ($equipamentoAnexos as $anexo): ?>
+                                <a href="<?php echo htmlspecialchars($anexo['caminho']); ?>" target="_blank" class="attachment-card">
+                                    <img src="<?php echo htmlspecialchars($anexo['caminho']); ?>" alt="<?php echo htmlspecialchars($anexo['descricao'] ?: 'Foto do equipamento'); ?>">
+                                    <div>
+                                        <div class="table-primary-text"><?php echo htmlspecialchars($anexo['descricao'] ?: 'Foto do equipamento'); ?></div>
+                                        <div class="table-muted-text"><?php echo !empty($anexo['created_at']) ? date('d/m/Y H:i', strtotime($anexo['created_at'])) : 'Data não informada'; ?></div>
+                                    </div>
+                                </a>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="form-section">
+                    <h3 class="form-section-title">OS Recentes</h3>
+                    <?php if (empty($equipamentoOsRecentes)): ?>
+                        <p style="color: var(--text-muted); font-size: 14px; margin: 0;">Nenhuma OS registrada para este equipamento.</p>
+                    <?php else: ?>
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>OS</th>
+                                        <th>Data</th>
+                                        <th>Cliente</th>
+                                        <th>Status</th>
+                                        <th>Valor</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($equipamentoOsRecentes as $osRecente): ?>
+                                        <tr>
+                                            <td><code>#<?php echo htmlspecialchars($osRecente['id_os']); ?></code></td>
+                                            <td><?php echo !empty($osRecente['data_abertura']) ? date('d/m/Y H:i', strtotime($osRecente['data_abertura'])) : 'Não informada'; ?></td>
+                                            <td><?php echo htmlspecialchars($osRecente['cliente_nome']); ?></td>
+                                            <td><?php echo htmlspecialchars($osRecente['status']); ?></td>
+                                            <td>R$ <?php echo number_format((float)$osRecente['valor_total'], 2, ',', '.'); ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="form-section">
+                    <h3 class="form-section-title">Observações Fixas</h3>
+                    <p style="color: var(--text-main); line-height: 1.6; margin: 0;"><?php echo nl2br(htmlspecialchars($editData['observacoes'] ?: 'Nenhuma observação cadastrada.')); ?></p>
+                </div>
+            </div>
+        <?php else: ?>
+        <div style="display: grid; grid-template-columns: 1fr; gap: 32px;">
+            <?php if (!in_array($action, ['create', 'edit'], true)): ?>
             
-            <!-- Coluna Esquerda: Listagem de Equipamentos Cadastrados -->
+            <!-- Listagem de Equipamentos Cadastrados -->
             <div class="card">
                 <div class="module-header">
                     <div>
@@ -349,9 +645,12 @@ try {
                             <?php echo ($isReturnToOS && $returnClienteId) ? 'do cliente selecionado para a OS.' : 'vinculados a clientes.'; ?>
                         </p>
                     </div>
-                    <?php if ($isReturnToOS): ?>
-                        <a href="index.php?page=os&action=create<?php echo $returnClienteId ? '&id_cliente=' . $returnClienteId : ''; ?>" class="btn btn-secondary">Voltar para OS</a>
-                    <?php endif; ?>
+                    <div class="action-group">
+                        <?php if ($isReturnToOS): ?>
+                            <a href="index.php?page=os&action=create<?php echo $returnClienteId ? '&id_cliente=' . $returnClienteId : ''; ?>" class="btn btn-secondary">Voltar para OS</a>
+                        <?php endif; ?>
+                        <a href="index.php?page=equipamentos&action=create<?php echo $returnQuery; ?>" class="btn btn-primary">Cadastrar Novo Equipamento</a>
+                    </div>
                 </div>
                 
                 <?php if (empty($equipamentosList)): ?>
@@ -409,7 +708,7 @@ try {
                                     <th>Nº de Série</th>
                                     <th>Identificação</th>
                                     <th>Cliente</th>
-                                    <th style="width: 150px; text-align: right;">Ações</th>
+                                    <th style="width: 240px; text-align: right;">Ações</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -443,7 +742,10 @@ try {
                                                     Usar na OS
                                                 </a>
                                             <?php endif; ?>
-                                            <a href="index.php?page=equipamentos&action=edit&id=<?php echo $eq['id_equipamento']; ?><?php echo $isReturnToOS ? '&return=os' : ''; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px;">
+                                            <a href="index.php?page=equipamentos&action=view&id=<?php echo $eq['id_equipamento']; ?><?php echo $isReturnToOS ? '&return=os&id_cliente=' . $eq['id_cliente'] : ''; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px;">
+                                                Visualizar
+                                            </a>
+                                            <a href="index.php?page=equipamentos&action=edit&id=<?php echo $eq['id_equipamento']; ?><?php echo $isReturnToOS ? '&return=os&id_cliente=' . $eq['id_cliente'] : ''; ?>" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 4px;">
                                                 Editar
                                             </a>
                                             <button type="button" class="btn btn-danger btn-confirm-action" 
@@ -462,7 +764,9 @@ try {
                 <?php endif; ?>
             </div>
 
-            <!-- Coluna Direita: Painel Dinâmico de Ação (Adicionar / Editar) -->
+            <?php else: ?>
+
+            <!-- Formulário de Cadastro / Edição -->
             <div class="card">
                 <?php if ($action === 'edit' && $editId): ?>
                     <div class="module-header">
@@ -470,8 +774,9 @@ try {
                             <h2 class="module-title" style="color: var(--warning);">Editar Equipamento</h2>
                             <p class="module-subtitle">Atualize o cadastro fixo do aparelho.</p>
                         </div>
+                        <a href="<?php echo $isReturnToOS ? 'index.php?page=equipamentos&return=os&action=create&id_cliente=' . urlencode((string)$editData['id_cliente']) : 'index.php?page=equipamentos'; ?>" class="btn btn-secondary">Voltar</a>
                     </div>
-                    <form id="formEquipamento" action="index.php?page=equipamentos&action=edit&id=<?php echo $editId; ?><?php echo $isReturnToOS ? '&return=os' : ''; ?>" method="POST" autocomplete="off">
+                    <form id="formEquipamento" action="index.php?page=equipamentos&action=edit&id=<?php echo $editId; ?><?php echo $returnQuery; ?>" method="POST" autocomplete="off">
                         <input type="hidden" name="form_action" value="update">
 
                         <div class="form-section" style="margin-top: 0;">
@@ -531,12 +836,53 @@ try {
                             <a href="<?php echo $isReturnToOS ? 'index.php?page=os&action=create&id_cliente=' . urlencode((string)$editData['id_cliente']) : 'index.php?page=equipamentos'; ?>" class="btn btn-secondary">Cancelar</a>
                         </div>
                     </form>
+
+                    <div class="form-section">
+                        <div class="form-section-title">Fotos do equipamento</div>
+                        <form action="index.php?page=equipamentos&action=edit&id=<?php echo $editId; ?><?php echo $returnQuery; ?>" method="POST" enctype="multipart/form-data" autocomplete="off" style="display: grid; gap: 12px;">
+                            <input type="hidden" name="form_action" value="upload_anexo">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="foto_anexo" class="form-label">Foto</label>
+                                <input type="file" id="foto_anexo" name="foto_anexo" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="descricao_anexo" class="form-label">Descrição</label>
+                                <input type="text" id="descricao_anexo" name="descricao_anexo" class="form-control" placeholder="Ex: aparelho fechado, placa, número de série">
+                            </div>
+                            <button type="submit" class="btn btn-secondary">Anexar Foto</button>
+                        </form>
+
+                        <?php if (empty($equipamentoAnexos)): ?>
+                            <p style="color: var(--text-muted); font-size: 13px; margin-top: 14px;">Nenhuma foto anexada.</p>
+                        <?php else: ?>
+                            <div class="attachment-grid" style="margin-top: 14px;">
+                                <?php foreach ($equipamentoAnexos as $anexo): ?>
+                                    <div class="attachment-card">
+                                        <a href="<?php echo htmlspecialchars($anexo['caminho']); ?>" target="_blank">
+                                            <img src="<?php echo htmlspecialchars($anexo['caminho']); ?>" alt="<?php echo htmlspecialchars($anexo['descricao'] ?: 'Foto do equipamento'); ?>">
+                                        </a>
+                                        <div>
+                                            <div class="table-primary-text"><?php echo htmlspecialchars($anexo['descricao'] ?: 'Foto do equipamento'); ?></div>
+                                            <div class="table-muted-text"><?php echo !empty($anexo['created_at']) ? date('d/m/Y H:i', strtotime($anexo['created_at'])) : 'Data não informada'; ?></div>
+                                        </div>
+                                        <button type="button" class="btn btn-danger btn-confirm-action"
+                                                data-url="index.php?page=equipamentos&action=delete_anexo&id=<?php echo $editId; ?>&id_anexo=<?php echo $anexo['id_anexo']; ?><?php echo $returnQuery; ?>"
+                                                data-text="Deseja remover esta foto do equipamento?"
+                                                style="padding: 4px 10px; font-size: 12px;">
+                                            Remover Foto
+                                        </button>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
                 <?php else: ?>
                     <div class="module-header">
                         <div>
                             <h2 class="module-title">Novo Equipamento</h2>
                             <p class="module-subtitle">Vincule o aparelho ao cliente antes de abrir OS.</p>
                         </div>
+                        <a href="<?php echo $isReturnToOS ? 'index.php?page=equipamentos&return=os&action=create' . ($returnClienteId ? '&id_cliente=' . urlencode((string)$returnClienteId) : '') : 'index.php?page=equipamentos'; ?>" class="btn btn-secondary">Voltar</a>
                     </div>
                     
                     <?php if (empty($clientesList)): ?>
@@ -555,7 +901,7 @@ try {
                                     <select id="id_cliente" name="id_cliente" class="form-control" required>
                                         <option value="">Selecione o proprietário...</option>
                                         <?php foreach ($clientesList as $cli): ?>
-                                            <option value="<?php echo $cli['id_pessoa']; ?>">
+                                            <option value="<?php echo $cli['id_pessoa']; ?>" <?php echo ($cli['id_pessoa'] == $editData['id_cliente']) ? 'selected' : ''; ?>>
                                                 <?php echo htmlspecialchars($cli['nome']) . ' (' . htmlspecialchars($cli['cpf_cnpj'] ?: 'Sem documento') . ')'; ?>
                                             </option>
                                         <?php endforeach; ?>
@@ -610,8 +956,10 @@ try {
                     <?php endif; ?>
                 <?php endif; ?>
             </div>
+            <?php endif; ?>
 
         </div>
+        <?php endif; ?>
     </div>
 </div>
 

@@ -230,7 +230,7 @@ if (!function_exists('getStatusTextLocal')) {
 
         <!-- ORÇAMENTO FINANCEIRO CONSOLIDADO -->
         <div style="display: flex; justify-content: flex-end; margin-bottom: 30px;">
-            <table style="border-collapse: collapse; font-size: 13px; width: 280px; border: 1px solid #000000;">
+            <table style="border-collapse: collapse; font-size: 13px; width: 380px; border: 1px solid #000000;">
                 <tr>
                     <td style="padding: 6px 8px; border-bottom: 1px dashed #000;">Total de Peças:</td>
                     <td style="text-align: right; padding: 6px 8px; border-bottom: 1px dashed #000; font-weight: bold;">

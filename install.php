@@ -55,6 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             "DROP TABLE IF EXISTS `historico_os`;",
             "DROP TABLE IF EXISTS `folha_pagto`;",
             "DROP TABLE IF EXISTS `os`;",
+            "DROP TABLE IF EXISTS `equipamento_anexo`;",
             "DROP TABLE IF EXISTS `equipamento_proprietario`;",
             "DROP TABLE IF EXISTS `equipamento`;",
             "DROP TABLE IF EXISTS `cliente`;",
@@ -132,6 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               `endereco_completo` varchar(255) DEFAULT NULL,
               `logo_caminho` varchar(255) DEFAULT NULL,
               `termo_compromisso_texto` text DEFAULT NULL,
+              `termo_retirada_texto` text DEFAULT NULL,
               `moeda` varchar(10) DEFAULT 'R$',
               `prazo_maximo_retirada` int(11) DEFAULT 90,
               PRIMARY KEY (`id_config`)
@@ -164,6 +166,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               KEY `fk_equipamento_prop_equipamento` (`id_equipamento`),
               KEY `fk_equipamento_prop_cliente` (`id_cliente`),
               KEY `idx_equipamento_prop_atual` (`id_equipamento`, `data_fim`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
+
+            // Tabela: equipamento_anexo
+            "CREATE TABLE `equipamento_anexo` (
+              `id_anexo` int(11) NOT NULL AUTO_INCREMENT,
+              `id_equipamento` int(11) NOT NULL,
+              `caminho` varchar(255) NOT NULL,
+              `nome_original` varchar(180) DEFAULT NULL,
+              `tipo_mime` varchar(80) DEFAULT NULL,
+              `tamanho` int(11) DEFAULT NULL,
+              `descricao` varchar(180) DEFAULT NULL,
+              `created_at` datetime DEFAULT current_timestamp(),
+              PRIMARY KEY (`id_anexo`),
+              KEY `fk_equipamento_anexo_equipamento` (`id_equipamento`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
             
             // Tabela: funcionario
@@ -354,6 +370,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             "ALTER TABLE `cliente` ADD CONSTRAINT `fk_cliente_pessoa` FOREIGN KEY (`id_pessoa`) REFERENCES `pessoa` (`id_pessoa`) ON DELETE CASCADE;",
             "ALTER TABLE `equipamento` ADD CONSTRAINT `fk_equipamento_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `cliente` (`id_pessoa`);",
             "ALTER TABLE `equipamento_proprietario` ADD CONSTRAINT `fk_equipamento_prop_equipamento` FOREIGN KEY (`id_equipamento`) REFERENCES `equipamento` (`id_equipamento`) ON DELETE CASCADE, ADD CONSTRAINT `fk_equipamento_prop_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `cliente` (`id_pessoa`);",
+            "ALTER TABLE `equipamento_anexo` ADD CONSTRAINT `fk_equipamento_anexo_equipamento` FOREIGN KEY (`id_equipamento`) REFERENCES `equipamento` (`id_equipamento`) ON DELETE CASCADE;",
             "ALTER TABLE `folha_pagto` ADD CONSTRAINT `fk_folha_funcionario` FOREIGN KEY (`id_funcionario`) REFERENCES `funcionario` (`id_pessoa`);",
             "ALTER TABLE `funcionario` ADD CONSTRAINT `fk_funcionario_pessoa` FOREIGN KEY (`id_pessoa`) REFERENCES `pessoa` (`id_pessoa`) ON DELETE CASCADE;",
             "ALTER TABLE `historico_os` ADD CONSTRAINT `fk_historico_os` FOREIGN KEY (`id_os`) REFERENCES `os` (`id_os`) ON DELETE CASCADE;",
@@ -455,8 +472,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // 4.6. Configuração do Sistema Inicial
         $stmtConfig = $pdoInit->prepare("INSERT INTO `config_sistema` 
-            (`id_config`, `nome_fantasia`, `razao_social`, `cnpj`, `telefone`, `email`, `endereco_completo`, `termo_compromisso_texto`, `moeda`, `prazo_maximo_retirada`)
-            VALUES (1, 'OS Master Assistência', 'OS Master Soluções em Tecnologia LTDA', '00.000.000/0001-00', '(67) 3411-0000', 'contacto@osmaster.com', 'Av. Presidente Vargas, 1200 - Dourados/MS', 'Autorizo a realização de testes e diagnósticos necessários no meu equipamento. O prazo limite para levantamento do aparelho após notificação do término do serviço é de 90 dias, findo o qual o aparelho será considerado abandonado nos termos da legislação civil vigente.', 'R$', 90)
+            (`id_config`, `nome_fantasia`, `razao_social`, `cnpj`, `telefone`, `email`, `endereco_completo`, `termo_compromisso_texto`, `termo_retirada_texto`, `moeda`, `prazo_maximo_retirada`)
+            VALUES (1, 'OS Master Assistência', 'OS Master Soluções em Tecnologia LTDA', '00.000.000/0001-00', '(67) 3411-0000', 'contacto@osmaster.com', 'Av. Presidente Vargas, 1200 - Dourados/MS', 'Autorizo a realização de testes e diagnósticos necessários no meu equipamento. O prazo limite para levantamento do aparelho após notificação do término do serviço é de 90 dias, findo o qual o aparelho será considerado abandonado nos termos da legislação civil vigente.', 'Declaro que retirei o equipamento descrito neste termo, conferi seu estado de entrega e estou ciente do parecer técnico informado. A garantia cobre apenas o serviço e as peças descritas na OS e perde validade em caso de mau uso, queda, líquidos, violação de lacres ou intervenção de terceiros.', 'R$', 90)
             ON DUPLICATE KEY UPDATE `id_config`=1;");
         $stmtConfig->execute();
 

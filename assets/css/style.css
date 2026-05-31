@@ -533,6 +533,35 @@ html[data-theme="light"] .main-content {
     display: none;
 }
 
+.attachment-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+}
+
+.attachment-card {
+    display: grid;
+    gap: 8px;
+    color: var(--text-main);
+    background-color: var(--bg-card-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 8px;
+}
+
+.attachment-card:hover {
+    border-color: var(--border-strong);
+    color: var(--text-main);
+}
+
+.attachment-card img {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-main);
+}
+
 /* Botões Modernos */
 .btn {
     display: inline-flex;
